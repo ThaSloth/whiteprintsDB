@@ -116,11 +116,11 @@ function linesEditor({ catalog, withCost, lines, readOnly }) {
     const l = line || {};
     const tr = h("tr", {},
       h("td", {}, inp("f-desc", l.description || "", { placeholder: "Descrição" })),
-      h("td", {}, inp("f-specs", l.specs || "")),
-      h("td", { class: "num sm" }, inp("f-qty r", numText(l.quantity ?? 1), { inputMode: "decimal" })),
-      h("td", { class: "num" }, inp("f-price r", centsText(l.unit_price_cents || 0), { inputMode: "decimal" })),
-      h("td", { class: "num sm" }, inp("f-vat r", numText(l.vat_rate ?? 23), { inputMode: "decimal" })),
-      withCost ? h("td", { class: "num" }, inp("f-cost r", centsText(l.unit_cost_cents || 0), { inputMode: "decimal" })) : null,
+      h("td", {}, inp("f-specs", l.specs || "", { placeholder: "Especificações" })),
+      h("td", { class: "num sm", "data-l": "Qtd" }, inp("f-qty r", numText(l.quantity ?? 1), { inputMode: "decimal" })),
+      h("td", { class: "num", "data-l": "Preço (€)" }, inp("f-price r", centsText(l.unit_price_cents || 0), { inputMode: "decimal" })),
+      h("td", { class: "num sm", "data-l": "IVA %" }, inp("f-vat r", numText(l.vat_rate ?? 23), { inputMode: "decimal" })),
+      withCost ? h("td", { class: "num", "data-l": "Custo (€)" }, inp("f-cost r", centsText(l.unit_cost_cents || 0), { inputMode: "decimal" })) : null,
       h("td", { class: "x" }, h("button", { type: "button", class: "icon", title: "Remover linha", "aria-label": "Remover linha", disabled: locked, onclick: () => { tr.remove(); recalc(); } }, "×")));
     tr._catalogId = l.catalog_item_id ?? null;
     if (l.supplier_id != null) tr._supplierId = l.supplier_id;
@@ -380,10 +380,11 @@ async function showJob({ jobId, clientId }) {
       function renderTabs() {
         clear(tabsBar); clear(tabBody);
         const open = job ? (job.tasks || []).filter((t) => t.status !== "feito").length : 0;
-        const defs = job ? [["itens", "Itens"], ["ficheiros", "Ficheiros"], ["tarefas", `Tarefas (${open})`]] : [["itens", "Itens"], ["x", "Ficheiros e tarefas"]];
+        const defs = job ? [["itens", "Itens"], ["ficheiros", "Ficheiros"], ["tarefas", `Tarefas (${open})`], ["agenda", `Agenda (${(job.events || []).length})`]] : [["itens", "Itens"], ["x", "Ficheiros e tarefas"]];
         defs.forEach(([k, t]) => tabsBar.append(h("button", { type: "button", class: "tab" + (tab === k ? " on" : ""), disabled: k === "x",
           onclick: () => { tab = k; renderTabs(); } }, t)));
         if (tab === "itens") tabBody.append(editor.el);
+        else if (tab === "agenda") tabBody.append(h("div", {}, h("div", { class: "toolbar" }, btn("+ Novo evento", async () => { if (await editEvent(null, { job_id: job.id, client_id: job.client_id })) reload(); }, "primary")), eventsTable(job.events || [], reload)));
         else if (tab === "ficheiros") { filesP = filesPanel({ client: { id: job.client_id, name: job.client_name }, jobId: job.id }); tabBody.append(filesP.el); }
         else tabBody.append(tasksView());
         if (!job) tabBody.append(h("p", { class: "muted", style: { marginTop: "10px" } }, "Guarde o trabalho primeiro para poder juntar ficheiros e tarefas."));

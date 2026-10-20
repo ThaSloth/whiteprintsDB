@@ -26,6 +26,7 @@ const LABELS = {
   ativa: "Ativa", pausada: "Pausada", terminada: "Terminada",
   briefing: "Briefing", "arte final": "Arte final", prova: "Prova", contrato: "Contrato",
   fatura: "Fatura", foto: "Foto", video: "Vídeo",
+  reuniao: "Reunião", instalacao: "Instalação", visita: "Visita a cliente", entrega: "Entrega",
 };
 const label = (v) => (v == null || v === "" ? "—" : LABELS[v] || v);
 const opts = (values) => values.map((v) => ({ label: label(v), value: v }));
@@ -34,6 +35,7 @@ const STATUS_COLORS = {
   "Em orçamento": ["#efede7", "#5b5851"], Adjudicado: ["#e3eaf4", "#2d4b78"], "Em produção": ["#f7ebd0", "#85570b"],
   Completo: ["#dbeee3", "#24604a"], Entregue: ["#e6e4df", "#3d3b36"],
   rascunho: ["#efede7", "#5b5851"], enviado: ["#e3eaf4", "#2d4b78"], aceite: ["#dbeee3", "#24604a"], recusado: ["#f3dedb", "#8f2d1f"],
+  reuniao: ["#e3eaf4", "#2d4b78"], instalacao: ["#f7ebd0", "#85570b"], visita: ["#dbeee3", "#24604a"], entrega: ["#e6e4df", "#3d3b36"],
   lead: ["#efede7", "#5b5851"], ativo: ["#dbeee3", "#24604a"], recorrente: ["#e3eaf4", "#2d4b78"], inativo: ["#e6e4df", "#77746c"],
   "por fazer": ["#efede7", "#5b5851"], "em curso": ["#f7ebd0", "#85570b"], feito: ["#dbeee3", "#24604a"],
   ativa: ["#dbeee3", "#24604a"], pausada: ["#f7ebd0", "#85570b"], terminada: ["#e6e4df", "#77746c"],
@@ -249,7 +251,7 @@ function toast(message) {
 
 /* Formulário genérico em janela. Devolve os valores, null se cancelou, ou DELETE se carregou em «Apagar». */
 const DELETE = Symbol("delete");
-function formDialog({ title, fields, values = {}, ok = "Guardar", required = [], intro, validate, onDelete, wide }) {
+function formDialog({ title, fields, values = {}, ok = "Guardar", required = [], intro, validate, onDelete, wide, extra }) {
   const inputs = {};
   const err = h("p", { class: "danger form-error", hidden: true });
   const rows = fields.map((f) => {
@@ -264,6 +266,7 @@ function formDialog({ title, fields, values = {}, ok = "Guardar", required = [],
       input.value = idx >= 0 ? String(idx) : (f.none != null ? "" : "0");
       input._options = list;
     } else if (f.type === "date") input = h("input", { type: "date", value: v || "" });
+    else if (f.type === "time") input = h("input", { type: "time", value: v ? String(v).slice(0, 5) : "" });
     else if (f.type === "money") input = h("input", { type: "text", inputMode: "decimal", value: v != null ? centsText(v) : "", placeholder: "0,00" });
     else if (f.type === "number") input = h("input", { type: "text", inputMode: "decimal", value: v != null ? numText(v) : (f.def ?? "") });
     else if (f.type === "int") input = h("input", { type: "number", min: f.min, max: f.max, step: 1, value: v ?? f.def ?? "" });
@@ -281,7 +284,7 @@ function formDialog({ title, fields, values = {}, ok = "Guardar", required = [],
       const el = inputs[f.key];
       if (f.type === "checkbox") out[f.key] = el.checked;
       else if (f.type === "select") out[f.key] = el.value === "" ? null : el._options[Number(el.value)].value;
-      else if (f.type === "date") out[f.key] = el.value || null;
+      else if (f.type === "date" || f.type === "time") out[f.key] = el.value || null;
       else if (f.type === "money") { try { out[f.key] = parseEur(el.value); } catch { throw new Error(`«${f.label}»: valor inválido.`); } }
       else if (f.type === "number") { try { out[f.key] = el.value.trim() === "" ? null : parseNumber(el.value); } catch { throw new Error(`«${f.label}»: número inválido.`); } }
       else if (f.type === "int") out[f.key] = el.value === "" ? null : Number(el.value);
@@ -306,6 +309,7 @@ function formDialog({ title, fields, values = {}, ok = "Guardar", required = [],
         intro ? h("p", { class: "muted" }, intro) : null, h("div", { class: "form-grid" }, rows), err,
         h("div", { class: "modal-foot" },
           onDelete ? btn("Apagar", async () => { if (await onDelete()) close(DELETE); }, "danger") : null,
+          (extra || []).map((x) => btn(x.text, () => { try { x.onClick(read()); err.hidden = true; } catch (e) { err.textContent = e.message; err.hidden = false; } })),
           h("div", { class: "spacer" }), btn("Cancelar", () => close(null)),
           h("button", { type: "submit", class: "btn primary" }, ok)));
       return form;
@@ -347,6 +351,7 @@ const API = {
   retainers: () => rpc("wp_list_retainers", { p_client: null }),
   catalog: (activeOnly) => rpc("wp_list_catalog", { p_active_only: !!activeOnly }),
   files: (client, job) => rpc("wp_list_files", { p_client: client ?? null, p_job: job ?? null }),
+  events: (from, to, client, job) => rpc("wp_list_events", { p_from: from ?? null, p_to: to ?? null, p_client: client ?? null, p_job: job ?? null }),
   home: (me) => rpc("wp_home", { p_today: todayISO(), p_days: 7, p_me: me ?? null }),
   dump: () => rpc("wp_dump"),
   save: (table, data) => rpc("wp_upsert", { p_table: table, p_data: data }),

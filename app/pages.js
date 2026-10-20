@@ -29,7 +29,10 @@ async function pageToday(root) {
   const kpis = h("div", { class: "kpis" }, JOB_STATUSES.map((st) => h("button", { type: "button", class: "card kpi", title: `Ver trabalhos «${st}»`,
     onclick: () => { F.jobs.status = st; location.hash = "#/trabalhos"; } }, h("span", { class: "num serif" }, String((a.counts || {})[st] || 0)), h("span", { class: "muted" }, st))));
   const shown = new Set([...a.overdue_tasks, ...a.due_tasks].map((t) => t.id));
+  const evRow = (ev) => rowCard(`${ev.start_time ? fmtTime(ev.start_time) + " · " : ""}${ev.title}`, eventSubtitle(ev), ev.start_on < todayISO() ? todayISO() : ev.start_on,
+    async () => { if (await editEvent(ev)) refresh(); }, { status: ev.kind });
   const sections = [
+    ["Agenda · próximos 7 dias", (a.events || []).map(evRow)],
     ["Atrasado", [...a.overdue_jobs.map(jobRow), ...a.overdue_tasks.map(taskRow)]],
     ["Próximos 7 dias", [...a.due_jobs.map(jobRow), ...a.due_tasks.map(taskRow)]],
     ["As minhas tarefas", a.mine.filter((t) => !shown.has(t.id)).slice(0, 10).map(taskRow)],
@@ -78,6 +81,8 @@ async function pageClient(root, id) {
       onClick: () => openJob({ jobId: j.id }),
       cells: [j.reference, { t: j.title, b: true }, pill(j.status), priorityCell(j.priority), dueCell(j.due_date, j.delivered_on, j.status === "Entregue"), moneyCell(j.net_cents)],
     })), { empty: "Este cliente ainda não tem trabalhos." }),
+    Agenda: () => h("div", {}, h("div", { class: "toolbar" }, btn("+ Novo evento", async () => { if (await editEvent(null, { client_id: c.id })) refresh(); }, "primary")),
+      eventsTable(ov.events || [], refresh)),
     Orçamentos: () => table(["Número", "Estado", "Emitido", "Válido até", { t: "Total c/ IVA", r: true }, "Trabalho"], ov.quotes.map((q) => ({
       onClick: () => openQuote({ quoteId: q.id }),
       cells: [{ t: q.number, b: true }, pill(q.status), fmtDate(q.issued_on), fmtDate(q.valid_until), moneyCell(q.gross_cents), q.job_ref || "—"],
