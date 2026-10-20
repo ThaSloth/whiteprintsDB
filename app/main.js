@@ -41,7 +41,7 @@ function showLogin(message) {
   const pass = h("input", { type: "password", autocomplete: "current-password", required: true });
   const err = h("p", { class: "danger", hidden: !message }, message || "");
   const go = h("button", { type: "submit", class: "btn primary wide-btn" }, "Entrar");
-  screen(h("h1", { class: "serif" }, "Entrar"), h("p", { class: "muted" }, "Área privada da Whiteprints."),
+  screen(h("h1", { class: "serif" }, "Entrar"), h("p", { class: "muted" }, "Área privada da whiteprints."),
     h("form", { onsubmit: async (e) => {
       e.preventDefault(); err.hidden = true; go.disabled = true; go.textContent = "A entrar…";
       const { data, error } = await sb.auth.signInWithPassword({ email: email.value.trim(), password: pass.value });
@@ -137,7 +137,7 @@ window.renderPage = async function renderPage() {
   clear(view).append(fresh);
   view.scrollTop = scroll;
   lastRender = Date.now();
-  document.title = "Whiteprints";
+  document.title = "whiteprints";
 };
 
 /* ---------- cópia de segurança: um ZIP com um CSV por tabela ---------- */
@@ -182,7 +182,7 @@ async function exportBackup() {
   const r = await run(async () => {
     const dump = await API.dump(), enc = new TextEncoder(), day = todayISO();
     const files = Object.entries(dump).map(([name, rows]) => ({ name: `${name}.csv`, data: enc.encode("﻿" + toCsv(rows)) }));
-    files.push({ name: "LEIA-ME.txt", data: enc.encode(`Cópia de segurança da Whiteprints — ${day}\r\nUm ficheiro CSV por tabela (abre no Excel/Numbers).\r\nOs ficheiros de clientes (artes, provas…) não vão aqui: continuam guardados no Supabase.\r\n`) });
+    files.push({ name: "LEIA-ME.txt", data: enc.encode(`Cópia de segurança da whiteprints — ${day}\r\nUm ficheiro CSV por tabela (abre no Excel/Numbers).\r\nOs ficheiros de clientes (artes, provas…) não vão aqui: continuam guardados no Supabase.\r\n`) });
     const url = URL.createObjectURL(zipStore(files));
     const a = h("a", { href: url, download: `whiteprints-copia-${day}.zip` });
     document.body.append(a); a.click(); a.remove();
