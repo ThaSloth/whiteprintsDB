@@ -136,7 +136,7 @@ window.renderPage = async function renderPage() {
   clear(view).append(fresh);
   view.scrollTop = scroll;
   lastRender = Date.now();
-  document.title = "Whiteprints";
+  document.title = "whiteprints";
 };
 
 /* ---------- cópia de segurança: um ZIP com um CSV por tabela ---------- */
