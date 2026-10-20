@@ -362,6 +362,8 @@ const API = {
   saveQuote: (data, lines) => rpc("wp_save_quote", { p_data: data, p_lines: lines, p_today: todayISO() }),
   setQuoteStatus: (id, st) => rpc("wp_set_quote_status", { p_id: id, p_status: st }),
   deleteQuote: (id) => rpc("wp_delete_quote", { p_id: id }),
+  deleteJob: (id, withQuote) => rpc("wp_delete_job", { p_id: id, p_delete_quote: !!withQuote }),
+  deleteClient: (id) => rpc("wp_delete_client", { p_id: id }),
   acceptQuote: (id, v) => rpc("wp_accept_quote", {
     p_id: id, p_title: v.title, p_category: v.category, p_due: v.due_date, p_owner: v.owner_id, p_priority: v.priority, p_today: todayISO(),
   }),

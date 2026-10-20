@@ -423,6 +423,11 @@ async function showJob({ jobId, clientId }) {
         tabsBar, tabBody, err,
         h("div", { class: "modal-foot" },
           job ? btn("Repetir trabalho", async () => { const id = await repeatJobDialog(job); if (id) { openNext = id; close(id); } }) : null,
+          job ? btn("Apagar", async () => {
+            const msg = `Apagar o trabalho ${job.reference} «${job.title}»? Apaga também os itens e as tarefas do trabalho. Os ficheiros ficam na ficha do cliente.`
+              + (job.quote_number ? ` O orçamento ${job.quote_number} volta ao estado «enviado».` : "");
+            if (await confirmDialog("Apagar trabalho", msg, { yes: "Apagar", danger: true }) && (await run(() => API.deleteJob(job.id, false))).ok) close(null);
+          }, "danger") : null,
           h("div", { class: "spacer" }), btn("Fechar", () => close(openNext)), btn("Guardar", save, "primary")));
     },
   }).then((r) => (typeof r === "number" ? r : null));

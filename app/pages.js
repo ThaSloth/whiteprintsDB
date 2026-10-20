@@ -113,10 +113,10 @@ async function pageClient(root, id) {
       btn("Editar", async () => { if (await editClient(c)) refresh(); }), btn("+ Orçamento", () => openQuote({ clientId: c.id })),
       btn("+ Trabalho", () => openJob({ clientId: c.id }), "primary"),
       btn("Apagar", async () => {
-        if (!(await confirmDialog("Apagar cliente", `Apagar «${c.name}»? Também apaga os contactos, ficheiros e tarefas soltas. Se houver trabalhos, orçamentos ou avenças, não é possível apagar.`, { yes: "Apagar", danger: true }))) return;
+        if (!(await confirmDialog("Apagar cliente", `Apagar «${c.name}» e TUDO o que tem: ${ov.jobs.length} trabalho(s), ${ov.quotes.length} orçamento(s), ${ov.retainers.length} avença(s), contactos, tarefas e ficheiros. Não dá para desfazer (faça antes uma cópia de segurança, se tiver dúvidas).`, { yes: "Apagar", danger: true }))) return;
         const r = await run(async () => {
           const fl = await API.files(c.id, null);
-          await API.remove("clients", c.id);
+          await API.deleteClient(c.id);
           const paths = [...new Set(fl.map((f) => f.storage_path))];
           if (paths.length) await sb.storage.from(BUCKET).remove(paths);
         });
@@ -167,8 +167,11 @@ async function pageQuotes(root) {
         onClick: () => openQuote({ quoteId: q.id }),
         cells: [{ t: q.number, b: true }, q.client_name, pill(q.status), fmtDate(q.issued_on),
           { t: fmtDate(q.valid_until) + (expired ? " · expirou" : ""), c: expired ? "danger" : "" }, moneyCell(q.gross_cents), q.job_ref || "—",
-          { node: q.status === "aceite" || q.job_id ? "" : btn("Apagar", async () => {
-            if (await confirmDialog("Apagar orçamento", `Apagar o orçamento ${q.number}?`, { yes: "Apagar", danger: true }) && (await run(() => API.deleteQuote(q.id))).ok) refresh();
+          { node: btn("Apagar", async () => {
+            const withJob = q.job_id != null;
+            const msg = withJob ? `Apagar o orçamento ${q.number} E o trabalho ${q.job_ref} que nasceu dele (itens e tarefas incluídos)? Os ficheiros ficam na ficha do cliente.` : `Apagar o orçamento ${q.number}?`;
+            if (await confirmDialog("Apagar orçamento", msg, { yes: "Apagar", danger: true })
+              && (await run(() => (withJob ? API.deleteJob(q.job_id, true) : API.deleteQuote(q.id)))).ok) refresh();
           }, "danger") }],
       };
     }), { empty: quotes.length ? "Nenhum orçamento com estes filtros." : "Ainda não há orçamentos. Crie um com «+ Novo orçamento»." }));
