@@ -88,6 +88,26 @@ async function manageRolls() {
   });
 }
 
+async function editCalcSettings(S0) {
+  const values = {};
+  for (const f of CALC_FIELDS) values[f.k] = f.pct ? Math.round(S0[f.k] * 100000) / 1000 : S0[f.k];
+  const vals = await formDialog({
+    title: "Custos e margem da calculadora", ok: "Guardar", wide: true, values,
+    intro: "Alterações valem para todos os cálculos futuros e ficam guardadas para os dois.",
+    validate: (v) => {
+      for (const f of CALC_FIELDS) if (v[f.k] == null || v[f.k] < 0) return `«${f.t}»: indique um valor igual ou superior a 0.`;
+      return v.margin >= 100 ? "A margem tem de ser inferior a 100%." : v.waste >= 100 ? "O desperdício tem de ser inferior a 100%." : null;
+    },
+    fields: CALC_FIELDS.map((f) => ({ key: f.k, label: f.t + (f.note ? ` — ${f.note}` : ""), type: "number", dec: 3 })),
+  });
+  if (!vals) return false;
+  const data = {};
+  for (const f of CALC_FIELDS) data[f.k] = f.pct ? vals[f.k] / 100 : vals[f.k];
+  const r = await run(() => API.saveCalcSettings(data));
+  if (r.ok) toast("Custos e margem guardados.");
+  return r.ok;
+}
+
 async function pageCalc(root) {
   const load = await run(async () => ({ rolls: await API.rolls(), s: await API.calcSettings() }));
   if (!load.ok) return;
@@ -130,38 +150,14 @@ async function pageCalc(root) {
       line("Mão de obra", eurF(r.c.labour)), line("Custos fixos + acabamentos", eurF(r.c.fixed)), line("CUSTO TOTAL", eurF(r.cost), true)));
   }
 
-  // definições de custo (valores da folha de cálculo; partilhadas pelos dois)
-  const sInputs = {};
-  const sGrid = h("div", { class: "calc-settings" }, CALC_FIELDS.map((f) => {
-    const v = f.pct ? S0[f.k] * 100 : S0[f.k];
-    sInputs[f.k] = h("input", { type: "text", inputMode: "decimal", value: numText(v, 3) });
-    return field(f.t, sInputs[f.k], f.note);
-  }));
-  const sErr = h("p", { class: "danger form-error", hidden: true });
-  const saveS = h("button", { type: "button", class: "btn primary" }, "Guardar definições");
-  saveS.onclick = async () => {
-    const data = {};
-    try {
-      for (const f of CALC_FIELDS) {
-        const n = parseNumber(sInputs[f.k].value);
-        if (n < 0) throw new Error(`«${f.t}»: não pode ser negativo.`);
-        data[f.k] = f.pct ? n / 100 : n;
-      }
-    } catch (e) { sErr.textContent = e.message === "vazio" || e.message === "número inválido" ? "Há um valor inválido nas definições." : e.message; sErr.hidden = false; return; }
-    if (data.margin >= 1) { sErr.textContent = "A margem tem de ser inferior a 100%."; sErr.hidden = false; return; }
-    sErr.hidden = true;
-    if ((await run(() => API.saveCalcSettings(data))).ok) { toast("Definições guardadas."); refresh(); }
-  };
-
-  root.append(pageHeader("Calculadora", btn("Gerir rolos", async () => { await manageRolls(); refresh(); })),
+  root.append(pageHeader("Calculadora",
+    btn("Editar custos e margem", async () => { if (await editCalcSettings(S0)) refresh(); }),
+    btn("Gerir rolos", async () => { await manageRolls(); refresh(); })),
     h("div", { class: "calc-grid" },
       h("div", { class: "card" }, h("h2", { class: "serif" }, "Trabalho"),
         field("Rolo", sel), field("Largura do trabalho (m)", fW), field("Comprimento do trabalho (m)", fL),
         field("Cópias", fC), field("Acabamentos extra (€)", fE, "Corte, laminação, ilhós, instalação, transporte…")),
       h("div", { class: "card" }, h("h2", { class: "serif" }, "Preço"), out)),
-    det,
-    h("details", { class: "calc-details card" }, h("summary", {}, "Definições de custo e margem"),
-      h("p", { class: "muted" }, "Valores usados em todos os cálculos (tinta, máquina, mão de obra, margem…). Partilhados entre os dois."),
-      sGrid, sErr, h("div", { class: "modal-foot" }, h("div", { class: "spacer" }), saveS)));
+    det);
   update();
 }
