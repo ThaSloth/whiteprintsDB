@@ -226,9 +226,13 @@ async function pageCatalog(root) {
   const missing = items.filter((c) => c.active && !c.unit_price_cents).length;
   root.append(pageHeader("Catálogo", btn("+ Novo item", async () => { if (await editCatalogItem(null)) refresh(); }, "primary")),
     missing ? h("p", { class: "notice" }, `${missing} item(ns) ativo(s) ainda sem preço. Clique num item para definir o preço — é o que aparece nos orçamentos.`) : null,
-    table(["Serviço / produto", "Categoria", "Unidade", { t: "Preço unit. s/ IVA", r: true }, { t: "IVA", r: true }, "Ativo"], items.map((c) => ({
+    table(["Serviço / produto", "Categoria", "Unidade", { t: "Preço unit. s/ IVA", r: true }, { t: "IVA", r: true }, "Ativo", ""], items.map((c) => ({
       onClick: async () => { if (await editCatalogItem(c)) refresh(); },
       cells: [{ t: c.name, b: true }, label(c.category), c.unit, c.unit_price_cents ? moneyCell(c.unit_price_cents) : { t: "por definir", r: true, c: "danger" },
-        { t: `${numText(c.vat_rate)}%`, r: true }, c.active ? "Sim" : { t: "Não", c: "muted" }],
+        { t: `${numText(c.vat_rate)}%`, r: true }, c.active ? "Sim" : { t: "Não", c: "muted" },
+        { node: btn("Apagar", async () => {
+          if (await confirmDialog("Apagar item", `Apagar «${c.name}» do catálogo? Os orçamentos e trabalhos que já o usam não mudam.`, { yes: "Apagar", danger: true })
+            && (await run(() => API.remove("catalog_items", c.id))).ok) refresh();
+        }, "danger") }],
     })), { empty: "O catálogo está vazio." }));
 }
