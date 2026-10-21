@@ -4,7 +4,6 @@
 const CX_FORMATS = [ // lado curto × lado longo (m)
   { k: "A3", s: 0.297, g: 0.420 }, { k: "A2", s: 0.420, g: 0.594 }, { k: "A1", s: 0.594, g: 0.841 }, { k: "A0", s: 0.841, g: 1.189 },
 ];
-const CX_A0_AREA = 0.841 * 1.189;
 const CX_PROFILES = [["photo", "Fotográfica / cartaz"], ["cad_color", "Plantas a cores"], ["cad_bw", "Plantas a preto"]];
 
 const CX_DEF = {
@@ -13,7 +12,6 @@ const CX_DEF = {
     prices: { A0: 11.5, A1: 8.5, A2: 6.5, A3: 2.3 } },
   cad_bw: { mode: "format", margin: 0.35, waste: 0.10, ink: 0.10, machine: 0.5, time_fixed_min: 0, time_per_m2_min: 0, labour_hour: 18, fixed_cost: 0, min_price: 0, round_step: 0.05, edge_m: 0.10, gap_m: 0.02,
     prices: { A0: 2.5, A1: 1.45, A2: 1.05, A3: 1.1 } },
-  fmt_tol_m: 0.01,
   ref_rolls: {},
   vinyl: { margin: 0.60, waste: 0.05, edge_m: 0.20, gap_m: 0.02, cut: 0.10, tape_waste: 0.05, time_fixed_min: 10, time_per_m2_min: 5, labour_hour: 18, fixed_cost: 2, round_step: 0.5 },
 };
@@ -31,7 +29,6 @@ function cxNormalize(stored) {
       else if (typeof src[k] === "number") out[key][k] = src[k];
     }
   }
-  if (typeof st.fmt_tol_m === "number") out.fmt_tol_m = st.fmt_tol_m;
   if (st.ref_rolls && typeof st.ref_rolls === "object") out.ref_rolls = { ...st.ref_rolls };
   return out;
 }
@@ -51,12 +48,6 @@ function cxFit(rollW, w, l, copies, p, rotate) {
 const cxRollM2 = (r) => (Number(r.width_m) * Number(r.length_m) > 0 ? r.price_cents / 100 / (Number(r.width_m) * Number(r.length_m)) : 0);
 const cxRoundUp = (x, step) => (step > 0 ? Math.ceil(x / step - 1e-9) * step : x);
 
-function cxPickFormat(w, l, tol) {
-  const s = Math.min(w, l), g = Math.max(w, l);
-  const fit = CX_FORMATS.find((f) => s <= f.s + tol && g <= f.g + tol);
-  return fit ? { k: fit.k, above: false } : { k: "A0", above: true };
-}
-
 /* referência: guardada, ou o rolo «CAD A0» / «CAD A1» pelo nome */
 function cxRefRoll(S, k, rolls) {
   const id = S.ref_rolls[k];
@@ -66,8 +57,9 @@ function cxRefRoll(S, k, rolls) {
   return rolls.find((r) => r.name.startsWith(pre)) || null;
 }
 
-function cxPrint(S, profile, mode, roll, rolls, w, l, copies, extra) {
+function cxPrint(S, profile, mode, roll, rolls, w, l, copies, extra, fmtKey) {
   const p = S[profile], rotate = profile !== "photo";
+  if (mode === "format") { const F = CX_FORMATS.find((x) => x.k === fmtKey) || CX_FORMATS[3]; w = F.s; l = F.g; }
   const f = cxFit(Number(roll.width_m), w, l, copies, p, rotate);
   if (!f) return { error: "wide" };
   const rollW = Number(roll.width_m), printed = w * l * copies;
@@ -78,8 +70,8 @@ function cxPrint(S, profile, mode, roll, rolls, w, l, copies, extra) {
   const cost = parts.paper + parts.ink + parts.machine + parts.labour + parts.fixed;
   const base = { fit: f, printed, parts, cost, copies };
   if (mode === "format") {
-    const fm = cxPickFormat(w, l, S.fmt_tol_m);
-    const unit = fm.above ? p.prices.A0 / CX_A0_AREA * w * l : p.prices[fm.k];
+    const fm = { k: fmtKey in p.prices ? fmtKey : "A0" };
+    const unit = p.prices[fm.k];
     const ref = cxRefRoll(S, fm.k, rolls);
     let adjust = 0, noRef = !ref, refFail = false;
     if (ref) {
@@ -235,8 +227,6 @@ async function cxEditSettings(S, which, rolls) {
     values.mode = p.mode;
     fields.unshift({ key: "mode", label: "Cálculo por defeito", type: "select", options: [{ label: "Por tabela de formato", value: "format" }, { label: "Por custo + margem", value: "margin" }] });
     for (const f of CX_FORMATS.slice().reverse()) { values["price_" + f.k] = p.prices[f.k]; fields.push({ key: "price_" + f.k, label: `Preço ${f.k} (€, s/ IVA)`, type: "number", dec: 2 }); }
-    values.tol = Math.round(S.fmt_tol_m * 10000) / 100;
-    fields.push({ key: "tol", label: "Folga ao escolher o formato (cm)", type: "number", dec: 2 });
     for (const f of CX_FORMATS.slice().reverse()) {
       const ref = cxRefRoll(S, f.k, rolls); values["ref_" + f.k] = ref ? ref.id : null;
       fields.push({ key: "ref_" + f.k, label: `Rolo de referência de ${f.k}`, type: "select", none: "— sem referência (sem ajuste)", options: rolls.map((r) => ({ label: r.name, value: r.id })) });
@@ -247,7 +237,7 @@ async function cxEditSettings(S, which, rolls) {
     title, wide: true, values, fields, ok: "Guardar",
     intro: plant ? "Preços por formato e rolo de referência (cálculo por tabela) e bases do cálculo por custo + margem. Ficam guardados para os dois." : "Alterações valem para todos os cálculos futuros e ficam guardadas para os dois.",
     validate: (v) => {
-      const bad = cxBad(v, src.map((f) => ({ key: f.k, label: f.t }))) || (plant ? cxBad(v, [...CX_FORMATS.map((f) => ({ key: "price_" + f.k, label: `Preço ${f.k}` })), { key: "tol", label: "Folga" }]) : null);
+      const bad = cxBad(v, src.map((f) => ({ key: f.k, label: f.t }))) || (plant ? cxBad(v, [...CX_FORMATS.map((f) => ({ key: "price_" + f.k, label: `Preço ${f.k}` }))]) : null);
       return bad || (v.margin >= 100 ? "A margem tem de ser inferior a 100%." : v.waste >= 100 ? "O desperdício tem de ser inferior a 100%." : null);
     },
   });
@@ -257,7 +247,6 @@ async function cxEditSettings(S, which, rolls) {
   if (plant) {
     q.mode = vals.mode;
     for (const f of CX_FORMATS) { q.prices[f.k] = vals["price_" + f.k]; if (vals["ref_" + f.k] != null) next.ref_rolls[f.k] = vals["ref_" + f.k]; else delete next.ref_rolls[f.k]; }
-    next.fmt_tol_m = vals.tol / 100;
   }
   const r = await run(() => API.saveCalcSettings(next));
   if (r.ok) toast("Custos e margem guardados.");
@@ -265,7 +254,7 @@ async function cxEditSettings(S, which, rolls) {
 }
 
 /* ---------- página ---------- */
-const cxState = { tab: "print", profile: "photo", mode: null, rollId: null, w: "", l: "", copies: "1", extra: "", tapeId: "", vextra: "", vlines: [{ vinylId: null, w: "", l: "", copies: "1" }] };
+const cxState = { tab: "print", profile: "photo", mode: null, fmt: "A0", rollId: null, w: "", l: "", copies: "1", extra: "", tapeId: "", vextra: "", vlines: [{ vinylId: null, w: "", l: "", copies: "1" }] };
 const cxLine = (lab, val, strong) => h("div", { class: "calc-line" + (strong ? " strong" : "") }, h("span", {}, lab), h("b", {}, val));
 const cxNumIn = (txt) => { try { return Math.max(0, parseNumber(txt)); } catch { return 0; } };
 const cxField = (lab, el, hint) => h("label", { class: "field block" }, h("span", { class: "lab" }, lab), el, hint ? h("span", { class: "muted small" }, hint) : null);
@@ -299,6 +288,9 @@ function cxPrintTab(body, S, rolls) {
   rollSel.addEventListener("change", () => { cxState.rollId = Number(rollSel.value); update(); });
   const inp = (key, ph) => h("input", { type: "text", inputMode: "decimal", placeholder: ph, value: cxState[key], autocomplete: "off", oninput: (e) => { cxState[key] = e.target.value; update(); } });
   const fW = inp("w", "ex.: 0,8"), fL = inp("l", "ex.: 1"), fC = inp("copies", "1"), fE = inp("extra", "0,00");
+  const byFormat = plant && mode === "format";
+  const fmtSel = byFormat ? h("select", {}, CX_FORMATS.slice().reverse().map((f) => h("option", { value: f.k }, `${f.k} (${numText(f.s * 100, 1)} × ${numText(f.g * 100, 1)} cm)`))) : null;
+  if (fmtSel) { fmtSel.value = cxState.fmt; fmtSel.addEventListener("change", () => { cxState.fmt = fmtSel.value; update(); }); }
   const out = h("div", { class: "calc-out" }), det = h("div");
 
   function update() {
@@ -306,13 +298,16 @@ function cxPrintTab(body, S, rolls) {
     const roll = rolls.find((r) => r.id === Number(rollSel.value));
     if (!roll) { out.append(h("p", { class: "notice" }, "Crie primeiro um rolo (botão «Gerir rolos»).")); return; }
     const w = cxNumIn(fW.value), l = cxNumIn(fL.value), copies = Math.max(1, Math.round(cxNumIn(fC.value) || 1)), extra = cxNumIn(fE.value);
-    if (!(w > 0) || !(l > 0)) { out.append(h("p", { class: "muted" }, "Indique a largura e o comprimento do trabalho para ver o preço.")); return; }
-    const r = cxPrint(S, cxState.profile, mode, roll, rolls, w, l, copies, extra);
-    if (r.error) { out.append(h("p", { class: "notice" }, `O trabalho (${cxM(w)} × ${cxM(l)}) não cabe na largura do rolo (${cxM(roll.width_m)}). Escolha outro rolo ou reduza a largura.`)); return; }
+    if (!byFormat && (!(w > 0) || !(l > 0))) { out.append(h("p", { class: "muted" }, "Indique a largura e o comprimento do trabalho para ver o preço.")); return; }
+    const r = cxPrint(S, cxState.profile, mode, roll, rolls, w, l, copies, extra, cxState.fmt);
+    if (r.error) {
+      const F = CX_FORMATS.find((x) => x.k === cxState.fmt);
+      out.append(h("p", { class: "notice" }, byFormat ? `O formato ${cxState.fmt} não cabe na largura do rolo (${cxM(roll.width_m)}). Escolha outro rolo ou outro formato.`
+        : `O trabalho (${cxM(w)} × ${cxM(l)}) não cabe na largura do rolo (${cxM(roll.width_m)}). Escolha outro rolo ou reduza a largura.`)); return;
+    }
     out.append(h("div", { class: "calc-final" }, h("span", {}, "PREÇO FINAL (sem IVA)"), h("b", {}, cxEur(r.final))));
     if (mode === "format") {
-      out.append(cxLine("Formato aplicado", r.fm.above ? "acima do A0 (preço do A0 por m²)" : r.fm.k),
-        cxLine(r.fm.above ? "Preço por m² do A0 × área" : "Preço da tabela (por cópia)", cxEur(r.unit)),
+      out.append(cxLine("Formato", r.fm.k), cxLine("Preço da tabela (por cópia)", cxEur(r.unit)),
         cxLine("Ajuste pelo rolo escolhido", r.noRef ? "sem rolo de referência" : r.refFail ? "sem ajuste (não cabe no rolo de referência)" : Math.abs(r.adjust) < 0.005 ? "sem ajuste" : `${r.adjust >= 0 ? "+" : "−"}${cxEur(Math.abs(r.adjust))}`),
         extra ? cxLine("Acabamentos extra", cxEur(extra)) : null);
     } else {
@@ -332,7 +327,8 @@ function cxPrintTab(body, S, rolls) {
   body.append(h("div", { class: "calc-grid" },
     h("div", { class: "card" }, h("h2", { class: "serif" }, "Trabalho"),
       cxField("Tipo de impressão", profSel), modeSel ? cxField("Cálculo", modeSel) : null, cxField("Rolo", rollSel),
-      cxField("Largura do trabalho (m)", fW), cxField("Comprimento do trabalho (m)", fL), cxField("Cópias", fC), cxField("Acabamentos extra (€)", fE, hint)),
+      byFormat ? cxField("Formato", fmtSel) : [cxField("Largura do trabalho (m)", fW), cxField("Comprimento do trabalho (m)", fL)],
+      cxField("Cópias", fC), cxField("Acabamentos extra (€)", fE, hint)),
     h("div", { class: "card" }, h("h2", { class: "serif" }, "Preço"), out)), det);
   update();
 }
