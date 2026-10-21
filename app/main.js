@@ -4,7 +4,7 @@
    ============================================================================= */
 
 const app = document.getElementById("app");
-const NAV = [["hoje", "Hoje"], ["agenda", "Agenda"], ["clientes", "Clientes"], ["trabalhos", "Trabalhos"], ["orcamentos", "Orçamentos"], ["tarefas", "Tarefas"], ["avencas", "Avenças"], ["catalogo", "Catálogo"]];
+const NAV = [["hoje", "Hoje"], ["agenda", "Agenda"], ["clientes", "Clientes"], ["trabalhos", "Trabalhos"], ["orcamentos", "Orçamentos"], ["tarefas", "Tarefas"], ["avencas", "Avenças"], ["catalogo", "Catálogo"], ["calculadora", "Calculadora"]];
 const storeGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const storeSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* sem armazenamento */ } };
 const logoImg = (white) => h("img", { src: white ? "assets/logo-white.svg" : "assets/logo.svg", alt: "whiteprints", class: "logo" });
@@ -129,6 +129,7 @@ window.renderPage = async function renderPage() {
     else if (page === "tarefas") await pageTasks(fresh);
     else if (page === "avencas") await pageRetainers(fresh);
     else if (page === "catalogo") await pageCatalog(fresh);
+    else if (page === "calculadora") await pageCalc(fresh);
     else await pageToday(fresh);
   } catch (e) {
     fresh.append(h("p", { class: "danger" }, friendly(e)), btn("Tentar outra vez", () => renderPage(), "primary"));

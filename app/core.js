@@ -105,9 +105,9 @@ function parseEur(text) {
   const t = String(text ?? "").trim();
   return t === "" ? 0 : Math.round(parseNumber(t) * 100);
 }
-function numText(v) {
-  const n = Number(v);
-  return Number.isFinite(n) ? String(Math.round(n * 100) / 100).replace(".", ",") : "";
+function numText(v, dec = 2) {
+  const n = Number(v), k = 10 ** dec;
+  return Number.isFinite(n) ? String(Math.round(n * k) / k).replace(".", ",") : "";
 }
 
 /* Arredondamento "meio para cima", igual ao da base de dados e ao da app do Mac:
@@ -268,7 +268,7 @@ function formDialog({ title, fields, values = {}, ok = "Guardar", required = [],
     } else if (f.type === "date") input = h("input", { type: "date", value: v || "" });
     else if (f.type === "time") input = h("input", { type: "time", value: v ? String(v).slice(0, 5) : "" });
     else if (f.type === "money") input = h("input", { type: "text", inputMode: "decimal", value: v != null ? centsText(v) : "", placeholder: "0,00" });
-    else if (f.type === "number") input = h("input", { type: "text", inputMode: "decimal", value: v != null ? numText(v) : (f.def ?? "") });
+    else if (f.type === "number") input = h("input", { type: "text", inputMode: "decimal", value: v != null ? numText(v, f.dec ?? 2) : (f.def ?? "") });
     else if (f.type === "int") input = h("input", { type: "number", min: f.min, max: f.max, step: 1, value: v ?? f.def ?? "" });
     else if (f.type === "checkbox") input = h("input", { type: "checkbox", checked: v != null ? !!v : !!f.def });
     else input = h("input", { type: "text", value: v ?? "", placeholder: f.placeholder, autocomplete: "off" });
@@ -364,6 +364,9 @@ const API = {
   deleteQuote: (id) => rpc("wp_delete_quote", { p_id: id }),
   deleteJob: (id, withQuote) => rpc("wp_delete_job", { p_id: id, p_delete_quote: !!withQuote }),
   deleteClient: (id) => rpc("wp_delete_client", { p_id: id }),
+  rolls: () => rpc("wp_list_rolls"),
+  calcSettings: () => rpc("wp_get_calc"),
+  saveCalcSettings: (data) => rpc("wp_save_calc", { p_data: data }),
   acceptQuote: (id, v) => rpc("wp_accept_quote", {
     p_id: id, p_title: v.title, p_category: v.category, p_due: v.due_date, p_owner: v.owner_id, p_priority: v.priority, p_today: todayISO(),
   }),

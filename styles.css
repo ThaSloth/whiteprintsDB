@@ -218,3 +218,17 @@ a,button,.row-card,tr.click{-webkit-tap-highlight-color:transparent}
   .cal-more{display:none}
   .cal-week{grid-template-columns:1fr}.cal-col{min-height:0}.cal-col .cal-add{display:block;opacity:1}
 }
+
+/* ---- calculadora ---- */
+.calc-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;margin-bottom:16px}
+.calc-grid .field.block{display:block;margin-top:12px}.calc-grid .field.block input,.calc-grid .field.block select{width:100%;margin-top:4px}
+.calc-line{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}
+.calc-line.strong{border-bottom:0;font-size:1.05em}
+.calc-final{display:flex;flex-direction:column;gap:2px;background:#1d1d1b;color:#fff;border-radius:12px;padding:14px 16px;margin-bottom:8px}
+.calc-final span{font-size:12px;letter-spacing:.06em;opacity:.8}.calc-final b{font-size:30px;font-weight:700}
+details.calc-details{margin-bottom:16px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+details.calc-details summary{cursor:pointer;font-weight:600}
+.calc-settings{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:4px 16px;margin-top:8px}
+.calc-settings .field.block{display:block;margin-top:8px}.calc-settings input{width:100%;margin-top:4px}
+.small{font-size:12px;display:block}
+@media (max-width:860px){.calc-grid{grid-template-columns:minmax(0,1fr)}.calc-final b{font-size:26px}}

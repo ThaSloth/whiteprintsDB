@@ -90,6 +90,7 @@ async function editCatalogItem(item) {
     title: item ? "Editar item" : "Novo item", required: ["name"],
     values: item || { category: "impressao", unit: "un", vat_rate: 23, unit_price_cents: 0, active: true },
     validate: (v) => (v.vat_rate == null || v.vat_rate < 0 || v.vat_rate > 100 ? "O IVA tem de estar entre 0 e 100." : null),
+    onDelete: item ? () => confirmDialog("Apagar item", `Apagar «${item.name}» do catálogo? Os orçamentos e trabalhos que já o usam não mudam.`, { yes: "Apagar", danger: true }) : null,
     fields: [
       { key: "name", label: "Nome" }, { key: "category", label: "Categoria", type: "select", options: opts(CATEGORIES) },
       { key: "unit", label: "Unidade" }, { key: "unit_price_cents", label: "Preço unitário (€, s/ IVA)", type: "money" },
@@ -98,6 +99,7 @@ async function editCatalogItem(item) {
     ],
   });
   if (!vals) return false;
+  if (vals === DELETE) return (await run(() => API.remove("catalog_items", item.id))).ok;
   vals.unit = vals.unit || "un";
   return (await run(() => API.save("catalog_items", item ? { id: item.id, ...vals } : vals))).ok;
 }
