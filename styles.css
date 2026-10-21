@@ -232,3 +232,14 @@ details.calc-details summary{cursor:pointer;font-weight:600}
 .calc-settings .field.block{display:block;margin-top:8px}.calc-settings input{width:100%;margin-top:4px}
 .small{font-size:12px;display:block}
 @media (max-width:860px){.calc-grid{grid-template-columns:minmax(0,1fr)}.calc-final b{font-size:26px}}
+.calc-profile{margin-bottom:14px;overflow-x:auto}
+.calc-sec{margin:18px 0 2px}
+.calc-fmt-row{display:grid;grid-template-columns:minmax(0,1.3fr) repeat(3,minmax(0,1fr));gap:4px 12px;align-items:end;margin-top:6px}
+.calc-fmt-row>b{padding-bottom:9px}
+@media (max-width:860px){.calc-fmt-row{grid-template-columns:minmax(0,1fr)}.calc-fmt-row>b{padding-bottom:0;margin-top:10px}}
+
+/* ---- calculadora: vinil ---- */
+.vl-row,.vl-head{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,.7fr) 32px;gap:8px;align-items:center;margin-top:8px}
+.vl-head{margin-top:12px}.vl-row input,.vl-row select{width:100%}
+.calc-grid .tabs{margin-bottom:0}
+@media (max-width:860px){.vl-head{display:none}.vl-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 32px;padding:10px 0;border-bottom:1px solid var(--line)}.vl-row select{grid-column:1 / -1}}

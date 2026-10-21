@@ -1,6 +1,6 @@
 "use strict";
 /* =============================================================================
-   Whiteprints · ecrãs: Hoje, Clientes (+ ficha), Trabalhos, Orçamentos, Tarefas, Avenças, Catálogo
+   whiteprints · ecrãs: Hoje, Clientes (+ ficha), Trabalhos, Orçamentos, Tarefas, Avenças, Catálogo
    ============================================================================= */
 
 const F = {   // filtros que se mantêm enquanto a janela está aberta

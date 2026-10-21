@@ -1,12 +1,12 @@
 "use strict";
 /* =============================================================================
-   Whiteprints · núcleo: formatação, valores, ligação ao Supabase e componentes base
+   whiteprints · núcleo: formatação, valores, ligação ao Supabase e componentes base
    (sem frameworks, sem passo de compilação)
    ============================================================================= */
 
 /* ---------- listas e nomes ---------- */
 const JOB_STATUSES = ["Em orçamento", "Adjudicado", "Em produção", "Completo", "Entregue"];
-const CLIENT_SOURCES = ["formulario", "whatsapp", "telefone", "recomendacao", "redes sociais", "presencial", "outro"];
+const CLIENT_SOURCES = ["formulario", "email", "whatsapp", "telefone", "recomendacao", "redes sociais", "presencial", "outro"];
 const CLIENT_STATUSES = ["lead", "ativo", "recorrente", "inativo"];
 const CATEGORIES = ["impressao", "textil dtf", "redes sociais", "foto e video", "design", "outro"];
 const QUOTE_STATUSES = ["rascunho", "enviado", "aceite", "recusado"];
@@ -17,7 +17,7 @@ const PRIORITY_COLORS = { 1: "#b9b6ae", 2: "#8a877f", 3: "#d48a1c", 4: "#c0392b"
 const BUCKET = "whiteprints-files";
 
 const LABELS = {
-  formulario: "Formulário do site", whatsapp: "WhatsApp", telefone: "Telefone", recomendacao: "Recomendação",
+  formulario: "Formulário do site", email: "E-mail", whatsapp: "WhatsApp", telefone: "Telefone", recomendacao: "Recomendação",
   "redes sociais": "Redes sociais", presencial: "Presencial", outro: "Outro",
   lead: "Lead", ativo: "Ativo", recorrente: "Recorrente", inativo: "Inativo",
   impressao: "Impressão", "textil dtf": "Têxtil DTF", "foto e video": "Foto e vídeo", design: "Design",
@@ -365,6 +365,8 @@ const API = {
   deleteJob: (id, withQuote) => rpc("wp_delete_job", { p_id: id, p_delete_quote: !!withQuote }),
   deleteClient: (id) => rpc("wp_delete_client", { p_id: id }),
   rolls: () => rpc("wp_list_rolls"),
+  vinyls: () => rpc("wp_list_vinyls"),
+  tapes: () => rpc("wp_list_tapes"),
   calcSettings: () => rpc("wp_get_calc"),
   saveCalcSettings: (data) => rpc("wp_save_calc", { p_data: data }),
   acceptQuote: (id, v) => rpc("wp_accept_quote", {

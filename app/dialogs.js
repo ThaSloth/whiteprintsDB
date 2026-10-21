@@ -1,6 +1,6 @@
 "use strict";
 /* =============================================================================
-   Whiteprints · janelas: formulários, editor de linhas, ficheiros, trabalho, orçamento
+   whiteprints · janelas: formulários, editor de linhas, ficheiros, trabalho, orçamento
    ============================================================================= */
 
 const S = { users: [], me: null, email: "" };   // estado global leve

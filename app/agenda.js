@@ -1,6 +1,6 @@
 "use strict";
 /* =============================================================================
-   Whiteprints · Agenda: reuniões, instalações, visitas, entregas
+   whiteprints · Agenda: reuniões, instalações, visitas, entregas
    Datas e horas «flutuantes» (a hora que se escreve é a hora local de quem vê) — como as duas pessoas
    estão em Portugal, 14:00 é 14:00 em qualquer dispositivo.
    ============================================================================= */
@@ -55,7 +55,7 @@ const icsDateTime = (iso, time) => `${icsDate(iso)}T${fmtTime(time).replace(":",
 function buildIcs(ev) {
   const now = new Date();
   const stamp = `${now.getUTCFullYear()}${pad2(now.getUTCMonth() + 1)}${pad2(now.getUTCDate())}T${pad2(now.getUTCHours())}${pad2(now.getUTCMinutes())}${pad2(now.getUTCSeconds())}Z`;
-  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Whiteprints//Agenda//PT", "CALSCALE:GREGORIAN", "BEGIN:VEVENT",
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//whiteprints//Agenda//PT", "CALSCALE:GREGORIAN", "BEGIN:VEVENT",
     `UID:wp-event-${ev.id || now.getTime()}@whiteprints`, `DTSTAMP:${stamp}`];
   if (!ev.start_time) {
     lines.push(`DTSTART;VALUE=DATE:${icsDate(ev.start_on)}`, `DTEND;VALUE=DATE:${icsDate(addDaysISO(ev.end_on || ev.start_on, 1))}`);
