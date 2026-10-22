@@ -8,7 +8,7 @@
 const JOB_STATUSES = ["Em orçamento", "Adjudicado", "Em produção", "Completo", "Entregue"];
 const CLIENT_SOURCES = ["formulario", "email", "whatsapp", "telefone", "recomendacao", "redes sociais", "presencial", "outro"];
 const CLIENT_STATUSES = ["lead", "ativo", "recorrente", "inativo"];
-const CATEGORIES = ["impressao", "textil dtf", "redes sociais", "foto e video", "design", "outro"];
+const CATEGORIES = ["impressao", "vinil de recorte", "textil dtf", "redes sociais", "foto e video", "design", "outro"];
 const QUOTE_STATUSES = ["rascunho", "enviado", "aceite", "recusado"];
 const TASK_STATUSES = ["por fazer", "em curso", "feito"];
 const FILE_KINDS = ["briefing", "arte final", "prova", "contrato", "fatura", "foto", "video", "outro"];
@@ -20,7 +20,7 @@ const LABELS = {
   formulario: "Formulário do site", email: "E-mail", whatsapp: "WhatsApp", telefone: "Telefone", recomendacao: "Recomendação",
   "redes sociais": "Redes sociais", presencial: "Presencial", outro: "Outro",
   lead: "Lead", ativo: "Ativo", recorrente: "Recorrente", inativo: "Inativo",
-  impressao: "Impressão", "textil dtf": "Têxtil DTF", "foto e video": "Foto e vídeo", design: "Design",
+  impressao: "Impressão", "vinil de recorte": "Vinil de Recorte", "textil dtf": "Têxtil DTF", "foto e video": "Foto e vídeo", design: "Design",
   rascunho: "Rascunho", enviado: "Enviado", aceite: "Aceite", recusado: "Recusado",
   "por fazer": "Por fazer", "em curso": "Em curso", feito: "Feito",
   ativa: "Ativa", pausada: "Pausada", terminada: "Terminada",

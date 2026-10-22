@@ -8,6 +8,7 @@ const F = {   // filtros que se mantêm enquanto a janela está aberta
   tasks: { who: "me", done: false, q: "" }, clientTab: "Trabalhos", pendingJobStatus: null,
 };
 
+const payLabel = (j) => (j.paid ? "Pago" : Number(j.paid_amount_cents) > 0 ? `Parcial · ${eur(j.paid_amount_cents)}` : "Por pagar");
 function searchBox(placeholder, value, onInput) {
   return h("input", { type: "search", class: "search", placeholder, value, oninput: debounce((e) => onInput(e.target.value), 120) });
 }
@@ -77,9 +78,9 @@ async function pageClient(root, id) {
   const monthly = ov.retainers.filter((r) => r.status === "ativa").reduce((s, r) => s + r.monthly_price_cents, 0);
   const bits = [c.phone, c.email, c.tax_id ? `NIF ${c.tax_id}` : null, c.address, `Chegou por: ${label(c.source)}`, c.vendus_ref ? `Vendus: ${c.vendus_ref}` : null].filter(Boolean);
   const tabs = {
-    Trabalhos: () => table(["Ref.", "Trabalho", "Estado", "Prioridade", "Prazo", { t: "Valor s/ IVA", r: true }], ov.jobs.map((j) => ({
+    Trabalhos: () => table(["Ref.", "Trabalho", "Estado", "Prioridade", "Prazo", "Pagamento", { t: "Valor s/ IVA", r: true }], ov.jobs.map((j) => ({
       onClick: () => openJob({ jobId: j.id }),
-      cells: [j.reference, { t: j.title, b: true }, pill(j.status), priorityCell(j.priority), dueCell(j.due_date, j.delivered_on, j.status === "Entregue"), moneyCell(j.net_cents)],
+      cells: [j.reference, { t: j.title, b: true }, pill(j.status), priorityCell(j.priority), dueCell(j.due_date, j.delivered_on, j.status === "Entregue"), payLabel(j), moneyCell(j.net_cents)],
     })), { empty: "Este cliente ainda não tem trabalhos." }),
     Agenda: () => h("div", {}, h("div", { class: "toolbar" }, btn("+ Novo evento", async () => { if (await editEvent(null, { client_id: c.id })) refresh(); }, "primary")),
       eventsTable(ov.events || [], refresh)),
@@ -140,9 +141,9 @@ async function pageJobs(root) {
     const f = F.jobs;
     const shown = jobs.filter((j) => (f.status === "all" || (f.status === "open" && j.status !== "Entregue") || j.status === f.status)
       && (!f.owner || String(j.owner_id) === f.owner) && matches(f.q, j.title, j.client_name, j.reference));
-    clear(host).append(table(["Ref.", "Trabalho", "Cliente", "Estado", "Prioridade", "Prazo", "Responsável", { t: "Valor s/ IVA", r: true }], shown.map((j) => ({
+    clear(host).append(table(["Ref.", "Trabalho", "Cliente", "Estado", "Prioridade", "Prazo", "Responsável", "Pagamento", { t: "Valor s/ IVA", r: true }], shown.map((j) => ({
       onClick: () => openJob({ jobId: j.id }),
-      cells: [j.reference, { t: j.title, b: true }, j.client_name, pill(j.status), priorityCell(j.priority), dueCell(j.due_date, j.delivered_on, j.status === "Entregue"), j.owner_name || "—", moneyCell(j.net_cents)],
+      cells: [j.reference, { t: j.title, b: true }, j.client_name, pill(j.status), priorityCell(j.priority), dueCell(j.due_date, j.delivered_on, j.status === "Entregue"), j.owner_name || "—", payLabel(j), moneyCell(j.net_cents)],
     })), { empty: jobs.length ? "Nenhum trabalho com estes filtros." : "Ainda não há trabalhos. Crie um com «+ Novo trabalho»." }));
     total.textContent = shown.length ? `${shown.length} trabalho(s) · ${eur(shown.reduce((s, j) => s + j.net_cents, 0))} s/ IVA` : "";
   };

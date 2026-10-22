@@ -13,6 +13,7 @@ const CX_DEF = {
   cad_bw: { mode: "format", margin: 0.35, waste: 0.10, ink: 0.10, machine: 0.5, time_fixed_min: 0, time_per_m2_min: 0, labour_hour: 18, fixed_cost: 0, min_price: 0, round_step: 0.05, edge_m: 0.10, gap_m: 0.02,
     prices: { A0: 2.5, A1: 1.45, A2: 1.05, A3: 1.1 } },
   ref_rolls: {},
+  cards: { corners_per_1000: 20, tiers: [{ q: 100, f: 15, b: 25 }, { q: 250, f: 25, b: 40 }, { q: 500, f: 40, b: 55 }, { q: 1000, f: 60, b: 75 }] },
   vinyl: { margin: 0.60, waste: 0.05, edge_m: 0.20, gap_m: 0.02, cut: 0.10, tape_waste: 0.05, time_fixed_min: 10, time_per_m2_min: 5, labour_hour: 18, fixed_cost: 2, round_step: 0.5 },
 };
 
@@ -28,6 +29,10 @@ function cxNormalize(stored) {
       else if (k === "mode") { if (src.mode === "format" || src.mode === "margin") out[key].mode = src.mode; }
       else if (typeof src[k] === "number") out[key][k] = src[k];
     }
+  }
+  if (st.cards && typeof st.cards === "object") {
+    if (typeof st.cards.corners_per_1000 === "number") out.cards.corners_per_1000 = st.cards.corners_per_1000;
+    if (Array.isArray(st.cards.tiers)) out.cards.tiers = out.cards.tiers.map((t) => { const o = st.cards.tiers.find((x) => x && x.q === t.q) || {}; return { q: t.q, f: typeof o.f === "number" ? o.f : t.f, b: typeof o.b === "number" ? o.b : t.b }; });
   }
   if (st.ref_rolls && typeof st.ref_rolls === "object") out.ref_rolls = { ...st.ref_rolls };
   return out;
@@ -112,6 +117,40 @@ function cxVinyl(S, lines, tape, extra) {
   out.profit = out.final - out.cost; out.realMargin = out.final > 0 ? out.profit / out.final : 0;
   out.perM2 = out.area > 0 ? out.final / out.area : 0;
   return out;
+}
+
+/* cartões de visita: tabela fixa; fora da tabela usa o preço por unidade do escalão mais baixo (nunca passa o preço do escalão seguinte) */
+function cxCards(S, sides, qty, corners) {
+  const C = S.cards, tiers = C.tiers.slice().sort((a, b) => a.q - b.q), key = sides === "fb" ? "b" : "f";
+  qty = Math.round(qty);
+  let lower = tiers[0];
+  for (const t of tiers) if (t.q <= qty) lower = t;
+  const next = tiers.find((t) => t.q > qty);
+  let base = (lower[key] / lower.q) * qty;
+  if (next && qty > lower.q) base = Math.min(base, next[key]);
+  if (qty === lower.q) base = lower[key];
+  base = Math.round(base * 100) / 100;
+  const corn = corners ? Math.round((C.corners_per_1000 * qty / 1000) * 100) / 100 : 0;
+  const total = Math.round((base + corn) * 100) / 100;
+  return { base, corners: corn, total, perCard: total / qty };
+}
+
+/* guardar no catálogo: cria o item ou atualiza o preço se já existir um com o mesmo nome */
+async function cxSaveToCatalog(name, category, cents) {
+  const r = await run(async () => {
+    const items = await API.catalog(false);
+    const found = items.find((c) => c.name.trim().toLowerCase() === name.trim().toLowerCase());
+    if (found) { await API.save("catalog_items", { ...found, unit_price_cents: cents, category }); return "atualizado"; }
+    await API.save("catalog_items", { name, category, unit: "un", unit_price_cents: cents, vat_rate: 0, active: true });
+    return "criado";
+  });
+  if (r.ok) toast(r.value === "criado" ? `Guardado no catálogo: ${name}` : `Preço atualizado no catálogo: ${name}`);
+}
+function cxSaveButton() {
+  const cur = { v: null };
+  const b = btn("Guardar no catálogo", async () => { if (cur.v) await cxSaveToCatalog(cur.v.name, cur.v.category, cur.v.cents); });
+  b.disabled = true;
+  return { el: h("div", { class: "toolbar" }, b), set: (v) => { cur.v = v; b.disabled = !v; b.title = v ? `${v.name} · ${cxEur(v.cents / 100)}` : ""; } };
 }
 
 const cxEur = (x) => eur(Math.round(x * 100));
@@ -253,8 +292,29 @@ async function cxEditSettings(S, which, rolls) {
   return r.ok;
 }
 
+async function cxEditCards(S) {
+  const C = S.cards, values = { corners: C.corners_per_1000 }, fields = [];
+  for (const t of C.tiers) { values["f" + t.q] = t.f; values["b" + t.q] = t.b; }
+  for (const t of C.tiers) {
+    fields.push({ key: "f" + t.q, label: `Pack ${t.q} · Frente (€)`, type: "number", dec: 2 }, { key: "b" + t.q, label: `Pack ${t.q} · Frente e Verso (€)`, type: "number", dec: 2 });
+  }
+  fields.push({ key: "corners", label: "Cantos redondos: acréscimo no pack de 1000 (€)", type: "number", dec: 2 });
+  const vals = await formDialog({
+    title: "Preços — cartões de visita", wide: true, values, fields, ok: "Guardar",
+    intro: "Preços do pack, sem IVA. Quantidades fora da tabela usam o preço por unidade do escalão mais baixo, sem passar o preço do escalão seguinte.",
+    validate: (v) => cxBad(v, fields.map((f) => ({ key: f.key, label: f.label }))),
+  });
+  if (!vals) return false;
+  const next = JSON.parse(JSON.stringify(S));
+  next.cards.corners_per_1000 = vals.corners;
+  next.cards.tiers = C.tiers.map((t) => ({ q: t.q, f: vals["f" + t.q], b: vals["b" + t.q] }));
+  const r = await run(() => API.saveCalcSettings(next));
+  if (r.ok) toast("Preços guardados.");
+  return r.ok;
+}
+
 /* ---------- página ---------- */
-const cxState = { tab: "print", profile: "photo", mode: null, fmt: "A0", rollId: null, w: "", l: "", copies: "1", extra: "", tapeId: "", vextra: "", vlines: [{ vinylId: null, w: "", l: "", copies: "1" }] };
+const cxState = { tab: "print", profile: "photo", mode: null, fmt: "A0", rollId: null, w: "", l: "", copies: "1", extra: "", tapeId: "", vextra: "", csides: "f", cqty: "250", ccorners: false, vlines: [{ vinylId: null, w: "", l: "", copies: "1" }] };
 const cxLine = (lab, val, strong) => h("div", { class: "calc-line" + (strong ? " strong" : "") }, h("span", {}, lab), h("b", {}, val));
 const cxNumIn = (txt) => { try { return Math.max(0, parseNumber(txt)); } catch { return 0; } };
 const cxField = (lab, el, hint) => h("label", { class: "field block" }, h("span", { class: "lab" }, lab), el, hint ? h("span", { class: "muted small" }, hint) : null);
@@ -263,15 +323,17 @@ async function pageCalc(root) {
   const load = await run(async () => ({ rolls: await API.rolls(), vinyls: await API.vinyls(), tapes: await API.tapes(), s: await API.calcSettings() }));
   if (!load.ok) return;
   const { rolls, vinyls, tapes } = load.value; const S = cxNormalize(load.value.s);
-  const tabs = h("div", { class: "tabs" }, [["print", "Impressão"], ["vinyl", "Vinil de recorte"]].map(([k, t]) =>
+  const tabs = h("div", { class: "tabs" }, [["print", "Impressão"], ["vinyl", "Vinil de recorte"], ["cards", "Cartões de visita"]].map(([k, t]) =>
     h("button", { type: "button", class: "tab" + (cxState.tab === k ? " on" : ""), onclick: () => { cxState.tab = k; refresh(); } }, t)));
 
   const body = h("div");
   const actions = cxState.tab === "print"
     ? [btn("Editar custos e margem", async () => { if (await cxEditSettings(S, cxState.profile, rolls)) refresh(); }), btn("Gerir rolos", async () => { await manageRolls(); refresh(); })]
+    : cxState.tab === "cards"
+    ? [btn("Editar preços", async () => { if (await cxEditCards(S)) refresh(); })]
     : [btn("Editar custos e margem", async () => { if (await cxEditSettings(S, "vinyl", rolls)) refresh(); }), btn("Gerir vinis", async () => { await manageVinyls(); refresh(); }), btn("Gerir fitas", async () => { await manageTapes(); refresh(); })];
   root.append(pageHeader("Calculadora", ...actions), tabs, body);
-  if (cxState.tab === "print") cxPrintTab(body, S, rolls); else cxVinylTab(body, S, vinyls, tapes);
+  if (cxState.tab === "print") cxPrintTab(body, S, rolls); else if (cxState.tab === "cards") cxCardsTab(body, S); else cxVinylTab(body, S, vinyls, tapes);
 }
 
 function cxPrintTab(body, S, rolls) {
@@ -291,10 +353,10 @@ function cxPrintTab(body, S, rolls) {
   const byFormat = plant && mode === "format";
   const fmtSel = byFormat ? h("select", {}, CX_FORMATS.slice().reverse().map((f) => h("option", { value: f.k }, `${f.k} (${numText(f.s * 100, 1)} × ${numText(f.g * 100, 1)} cm)`))) : null;
   if (fmtSel) { fmtSel.value = cxState.fmt; fmtSel.addEventListener("change", () => { cxState.fmt = fmtSel.value; update(); }); }
-  const out = h("div", { class: "calc-out" }), det = h("div");
+  const out = h("div", { class: "calc-out" }), det = h("div"), sv = cxSaveButton();
 
   function update() {
-    clear(out); clear(det);
+    clear(out); clear(det); sv.set(null);
     const roll = rolls.find((r) => r.id === Number(rollSel.value));
     if (!roll) { out.append(h("p", { class: "notice" }, "Crie primeiro um rolo (botão «Gerir rolos»).")); return; }
     const w = cxNumIn(fW.value), l = cxNumIn(fL.value), copies = Math.max(1, Math.round(cxNumIn(fC.value) || 1)), extra = cxNumIn(fE.value);
@@ -306,6 +368,8 @@ function cxPrintTab(body, S, rolls) {
         : `O trabalho (${cxM(w)} × ${cxM(l)}) não cabe na largura do rolo (${cxM(roll.width_m)}). Escolha outro rolo ou reduza a largura.`)); return;
     }
     out.append(h("div", { class: "calc-final" }, h("span", {}, "PREÇO FINAL (sem IVA)"), h("b", {}, cxEur(r.final))));
+    const typeName = { photo: "Fotografia/Cartaz", cad_color: "Plantas a Cores", cad_bw: "Plantas a Preto" }[cxState.profile];
+    sv.set({ name: `Impressão de Grandes Formatos - ${typeName} - ${byFormat ? r.fm.k : `${numText(w, 2)} x ${numText(l, 2)} m`}`, category: "impressao", cents: Math.round(r.perCopy * 100) });
     if (mode === "format") {
       out.append(cxLine("Formato", r.fm.k), cxLine("Preço da tabela (por cópia)", cxEur(r.unit)),
         cxLine("Ajuste pelo rolo escolhido", r.noRef ? "sem rolo de referência" : r.refFail ? "sem ajuste (não cabe no rolo de referência)" : Math.abs(r.adjust) < 0.005 ? "sem ajuste" : `${r.adjust >= 0 ? "+" : "−"}${cxEur(Math.abs(r.adjust))}`),
@@ -329,12 +393,12 @@ function cxPrintTab(body, S, rolls) {
       cxField("Tipo de impressão", profSel), modeSel ? cxField("Cálculo", modeSel) : null, cxField("Rolo", rollSel),
       byFormat ? cxField("Formato", fmtSel) : [cxField("Largura do trabalho (m)", fW), cxField("Comprimento do trabalho (m)", fL)],
       cxField("Cópias", fC), cxField("Acabamentos extra (€)", fE, hint)),
-    h("div", { class: "card" }, h("h2", { class: "serif" }, "Preço"), out)), det);
+    h("div", { class: "card" }, h("h2", { class: "serif" }, "Preço"), out, sv.el)), det);
   update();
 }
 
 function cxVinylTab(body, S, vinyls, tapes) {
-  const out = h("div", { class: "calc-out" }), det = h("div"), linesHost = h("div", { class: "vl-lines" });
+  const out = h("div", { class: "calc-out" }), det = h("div"), sv = cxSaveButton(), linesHost = h("div", { class: "vl-lines" });
   if (!cxState.vlines.length) cxState.vlines.push({ vinylId: null, w: "", l: "", copies: "1" });
   for (const ln of cxState.vlines) if (!vinyls.find((v) => v.id === ln.vinylId)) ln.vinylId = vinyls[0] ? vinyls[0].id : null;
   const tapeSel = h("select", {}, h("option", { value: "" }, "— sem fita de transferência"), tapes.map((t) => h("option", { value: t.id }, `${t.name} (${numText(t.width_m, 3)} m)`)));
@@ -355,7 +419,7 @@ function cxVinylTab(body, S, vinyls, tapes) {
   }
 
   function update() {
-    clear(out); clear(det);
+    clear(out); clear(det); sv.set(null);
     if (!vinyls.length) { out.append(h("p", { class: "notice" }, "Crie primeiro um vinil (botão «Gerir vinis»).")); return; }
     const lines = [];
     for (const ln of cxState.vlines) {
@@ -367,6 +431,11 @@ function cxVinylTab(body, S, vinyls, tapes) {
     const tape = tapes.find((t) => String(t.id) === String(tapeSel.value)) || null;
     const r = cxVinyl(S, lines, tape, cxNumIn(fExtra.value));
     if (r.errors.length) { out.append(...r.errors.map((e) => h("p", { class: "notice" }, e + " Escolha outro vinil ou reduza o trabalho."))); return; }
+    const dims = (x) => `${numText(x.w, 2)} x ${numText(x.l, 2)} m`;
+    if (lines.length === 1) {
+      const one = cxVinyl(S, [{ ...lines[0], copies: 1 }], tape, cxNumIn(fExtra.value));
+      sv.set({ name: `Vinil de Recorte - ${dims(lines[0])}`, category: "vinil de recorte", cents: Math.round(one.final * 100) });
+    } else sv.set({ name: `Vinil de Recorte - ${lines.map((x) => dims(x) + (x.copies > 1 ? ` (×${x.copies})` : "")).join(" + ")}`, category: "vinil de recorte", cents: Math.round(r.final * 100) });
     out.append(h("div", { class: "calc-final" }, h("span", {}, "PREÇO FINAL (sem IVA)"), h("b", {}, cxEur(r.final))),
       cxLine("Preço calculado pela margem", cxEur(r.calc)), cxLine("Preço por m² do trabalho", cxEur(r.perM2)), cxLine("Área do trabalho (retângulos)", cxM2(r.area)),
       cxLine("Custo total", cxEur(r.cost)), cxLine("Lucro bruto", cxEur(r.profit)), cxLine("Margem real", `${numText(r.realMargin * 100, 1)}%`),
@@ -385,6 +454,28 @@ function cxVinylTab(body, S, vinyls, tapes) {
       linesHost,
       btn("+ Adicionar vinil", () => { cxState.vlines.push({ vinylId: vinyls[0] ? vinyls[0].id : null, w: "", l: "", copies: "1" }); drawLines(); update(); }),
       cxField("Fita de transferência", tapeSel), cxField("Acabamentos extra (€)", fExtra, "Entra no custo (leva margem): variantes fora do normal")),
-    h("div", { class: "card" }, h("h2", { class: "serif" }, "Preço"), out)), det);
+    h("div", { class: "card" }, h("h2", { class: "serif" }, "Preço"), out, sv.el)), det);
   drawLines(); update();
+}
+
+function cxCardsTab(body, S) {
+  const out = h("div", { class: "calc-out" }), sv = cxSaveButton();
+  const sides = h("select", {}, [["f", "Só frente"], ["fb", "Frente e verso"]].map(([k, t]) => h("option", { value: k }, t))); sides.value = cxState.csides;
+  sides.addEventListener("change", () => { cxState.csides = sides.value; update(); });
+  const qty = h("input", { type: "text", inputMode: "numeric", value: cxState.cqty, autocomplete: "off", oninput: (e) => { cxState.cqty = e.target.value; update(); } });
+  const corners = h("input", { type: "checkbox", checked: !!cxState.ccorners }); corners.addEventListener("change", () => { cxState.ccorners = corners.checked; update(); });
+  function update() {
+    clear(out); sv.set(null);
+    const q = Math.round(cxNumIn(qty.value));
+    if (!(q >= 1)) { out.append(h("p", { class: "muted" }, "Indique a quantidade de cartões.")); return; }
+    const r = cxCards(S, sides.value, q, corners.checked);
+    out.append(h("div", { class: "calc-final" }, h("span", {}, "PREÇO FINAL (sem IVA)"), h("b", {}, cxEur(r.total))),
+      cxLine("Preço por cartão", `${numText(r.perCard, 3)} €`));
+    sv.set({ name: `Cartões de Visita - ${sides.value === "fb" ? "Frente e Verso" : "Frente"} - Pack ${q}${corners.checked ? " - Cantos redondos" : ""}`, category: "impressao", cents: Math.round(r.total * 100) });
+  }
+  body.append(h("div", { class: "calc-grid" },
+    h("div", { class: "card" }, h("h2", { class: "serif" }, "Cartões de visita"),
+      cxField("Impressão", sides), cxField("Quantidade", qty), h("label", { class: "check" }, corners, "Cantos redondos")),
+    h("div", { class: "card" }, h("h2", { class: "serif" }, "Preço"), out, sv.el)));
+  update();
 }

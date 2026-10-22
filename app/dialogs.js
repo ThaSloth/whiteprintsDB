@@ -330,11 +330,28 @@ async function showJob({ jobId, clientId }) {
       F.owner = h("select", {}, h("option", { value: "" }, "—"), S.users.map((u) => h("option", { value: u.id }, u.name)));
       F.owner.value = String(job ? (job.owner_id ?? "") : (S.me ? S.me.id : ""));
       F.invoice = h("input", { type: "text", placeholder: "n.º da fatura no Vendus", value: (job && job.invoice_ref) || "" });
-      F.paid = h("input", { type: "checkbox", checked: !!(job && job.paid) });
+      const payState0 = job ? (job.paid ? "pago" : (Number(job.paid_amount_cents) > 0 ? "parcial" : "por pagar")) : "por pagar";
+      F.pay = h("select", {}, [["por pagar", "Por pagar"], ["parcial", "Parcialmente pago"], ["pago", "Pago"]].map(([v, t]) => h("option", { value: v }, t)));
+      F.pay.value = payState0;
+      F.paidAmt = h("input", { type: "text", inputMode: "decimal", placeholder: "Valor já pago (€)", value: job && !job.paid && Number(job.paid_amount_cents) > 0 ? centsText(job.paid_amount_cents) : "" });
+      const payInfo = h("span", { class: "muted pay-info" });
       F.notes = h("textarea", { rows: 2, value: (job && job.notes) || "" });
       const editor = linesEditor({ catalog, withCost: true, lines: job ? job.items : [] });
       const err = h("p", { class: "danger form-error", hidden: true });
       const problem = (t) => { err.textContent = t; err.hidden = false; };
+      const grossNow = () => { try { return totalsOf(editor.getLines(), false).gross_cents; } catch { return null; } };
+      const updatePay = () => {
+        F.paidAmt.hidden = F.pay.value !== "parcial";
+        payInfo.textContent = "";
+        if (F.pay.value === "parcial") {
+          const g = grossNow(); let paid = 0;
+          try { paid = parseEur(F.paidAmt.value); } catch { return; }
+          if (g != null && paid > 0) payInfo.textContent = `Em falta: ${eur(Math.max(g - paid, 0))} (total c/ IVA ${eur(g)})`;
+        }
+      };
+      F.pay.addEventListener("change", updatePay); F.paidAmt.addEventListener("input", updatePay);
+      editor.el.addEventListener("input", updatePay); editor.el.addEventListener("click", () => setTimeout(updatePay, 0));
+      setTimeout(updatePay, 0);
 
       const head = h("div", { class: "dialog-title" });
       const origin = h("p", { class: "muted" });
@@ -399,10 +416,17 @@ async function showJob({ jobId, clientId }) {
         if (!F.client.value) return problem("Crie primeiro um cliente (ecrã Clientes).");
         let items;
         try { items = editor.getLines(); } catch (e) { return problem(e.message); }
+        let paidAmount = 0;
+        if (F.pay.value === "parcial") {
+          try { paidAmount = parseEur(F.paidAmt.value); } catch { return problem("Valor já pago inválido."); }
+          if (paidAmount <= 0) return problem("Indique o valor já pago (maior que zero) ou escolha «Por pagar».");
+          const g = grossNow();
+          if (g != null && paidAmount >= g && g > 0) return problem("O valor já pago cobre o total do trabalho: escolha «Pago».");
+        }
         const data = {
           title, category: F.category.value, priority: Number(F.priority.value), due_date: F.due.value || null,
           owner_id: F.owner.value ? Number(F.owner.value) : null, invoice_ref: F.invoice.value.trim() || null,
-          paid: F.paid.checked, notes: F.notes.value.trim() || null,
+          paid: F.pay.value === "pago", paid_amount_cents: paidAmount, notes: F.notes.value.trim() || null,
         };
         if (job) data.id = job.id; else data.client_id = Number(F.client.value);
         if ((await run(() => API.saveJob(data, items))).ok) close(null);
@@ -418,7 +442,7 @@ async function showJob({ jobId, clientId }) {
           h("label", { class: "field" }, h("span", { class: "lab" }, "Prioridade"), F.priority),
           h("label", { class: "field" }, h("span", { class: "lab" }, "Prazo"), F.due),
           h("label", { class: "field" }, h("span", { class: "lab" }, "Fatura"), F.invoice),
-          h("div", { class: "field" }, h("span", { class: "lab" }), h("label", { class: "check" }, F.paid, "Pago"))));
+          h("label", { class: "field" }, h("span", { class: "lab" }, "Pagamento"), F.pay, F.paidAmt, payInfo)));
       renderHead(); renderTabs();
       return h("div", { class: "modal-body" }, head, origin, grid,
         h("label", { class: "field block" }, h("span", { class: "lab" }, "Notas"), F.notes),
