@@ -53,7 +53,8 @@ async function pageToday(root) {
     ["Próximos 7 dias", [...a.due_jobs.map(jobRow), ...a.due_tasks.map(taskRow)]],
     ["As minhas tarefas", a.mine.filter((t) => !shown.has(t.id)).slice(0, 10).map(taskRow)],
   ].filter(([, rows]) => rows.length);
-  root.append(h("h1", { class: "serif greet" }, `${hello}, ${S.me ? S.me.name : ""}`), h("p", { class: "muted" }, longDate(todayISO())), kpis,
+  root.append(h("h1", { class: "serif greet" }, `${hello}, ${S.me ? S.me.name : ""}`), h("p", { class: "muted" }, longDate(todayISO())),
+    h("div", { class: "mindful" }, h("span", { class: "lab2" }, "Frase do dia"), h("q", {}, fraseDoDia())), kpis,
     sections.length ? sections.map(([t, rows, money]) => h("section", {}, sectionLabel(money ? `${t}  ·  ${rows.length} trabalho(s)` : `${t}  ·  ${rows.length}`), h("div", { class: "rows" }, rows)))
       : emptyNote("Nada atrasado nem a vencer esta semana. Boa altura para adiantar trabalho."));
 }

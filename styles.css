@@ -248,3 +248,8 @@ details.calc-details summary{cursor:pointer;font-weight:600}
 .pay-banner{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 14px;border-radius:10px;margin:8px 0;border:1px solid}
 .pay-banner.soon{background:#fbf1dc;border-color:#e6c98a;color:#7a4b00}
 .pay-banner.late{background:#f8e3e0;border-color:#e3aaa2;color:#8f2d1f}
+
+.mindful{background:#1d1d1b;color:#f4f2ed;border-radius:14px;padding:24px 28px;margin:8px 0 20px}
+.mindful .lab2{font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;opacity:.65;display:block;margin-bottom:6px}
+.mindful q{font:italic 400 28px/1.3 var(--serif);quotes:none;display:block}
+@media (max-width:860px){.mindful{padding:20px}.mindful q{font-size:22px}}
