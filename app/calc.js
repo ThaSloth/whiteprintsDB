@@ -14,6 +14,8 @@ const CX_DEF = {
     prices: { A0: 2.5, A1: 1.45, A2: 1.05, A3: 1.1 } },
   ref_rolls: {},
   cards: { corners_per_1000: 20, tiers: [{ q: 100, f: 15, b: 25 }, { q: 250, f: 25, b: 40 }, { q: 500, f: 40, b: 55 }, { q: 1000, f: 60, b: 75 }] },
+  flyer_a6: { tiers: [{ q: 100, f: 10, b: 15 }, { q: 250, f: 15, b: 25 }, { q: 500, f: 25, b: 40 }, { q: 1000, f: 40, b: 75 }] },
+  flyer_a5: { tiers: [{ q: 100, f: 20, b: 30 }, { q: 250, f: 30, b: 50 }, { q: 500, f: 50, b: 80 }, { q: 1000, f: 80, b: 150 }] },
   vinyl: { margin: 0.60, waste: 0.05, edge_m: 0.20, gap_m: 0.02, cut: 0.10, tape_waste: 0.05, time_fixed_min: 10, time_per_m2_min: 5, labour_hour: 18, fixed_cost: 2, round_step: 0.5 },
 };
 
@@ -30,9 +32,10 @@ function cxNormalize(stored) {
       else if (typeof src[k] === "number") out[key][k] = src[k];
     }
   }
-  if (st.cards && typeof st.cards === "object") {
-    if (typeof st.cards.corners_per_1000 === "number") out.cards.corners_per_1000 = st.cards.corners_per_1000;
-    if (Array.isArray(st.cards.tiers)) out.cards.tiers = out.cards.tiers.map((t) => { const o = st.cards.tiers.find((x) => x && x.q === t.q) || {}; return { q: t.q, f: typeof o.f === "number" ? o.f : t.f, b: typeof o.b === "number" ? o.b : t.b }; });
+  for (const key of ["cards", "flyer_a6", "flyer_a5"]) {
+    const c = st[key]; if (!c || typeof c !== "object") continue;
+    if (key === "cards" && typeof c.corners_per_1000 === "number") out.cards.corners_per_1000 = c.corners_per_1000;
+    if (Array.isArray(c.tiers)) out[key].tiers = out[key].tiers.map((t) => { const o = c.tiers.find((x) => x && x.q === t.q) || {}; return { q: t.q, f: typeof o.f === "number" ? o.f : t.f, b: typeof o.b === "number" ? o.b : t.b }; });
   }
   if (st.ref_rolls && typeof st.ref_rolls === "object") out.ref_rolls = { ...st.ref_rolls };
   return out;
@@ -120,8 +123,8 @@ function cxVinyl(S, lines, tape, extra) {
 }
 
 /* cartões de visita: tabela fixa; fora da tabela usa o preço por unidade do escalão mais baixo (nunca passa o preço do escalão seguinte) */
-function cxCards(S, sides, qty, corners) {
-  const C = S.cards, tiers = C.tiers.slice().sort((a, b) => a.q - b.q), key = sides === "fb" ? "b" : "f";
+function cxCards(S, sides, qty, corners, prod = "cards") {
+  const C = S[prod], tiers = C.tiers.slice().sort((a, b) => a.q - b.q), key = sides === "fb" ? "b" : "f";
   qty = Math.round(qty);
   let lower = tiers[0];
   for (const t of tiers) if (t.q <= qty) lower = t;
@@ -130,7 +133,7 @@ function cxCards(S, sides, qty, corners) {
   if (next && qty > lower.q) base = Math.min(base, next[key]);
   if (qty === lower.q) base = lower[key];
   base = Math.round(base * 100) / 100;
-  const corn = corners ? Math.round((C.corners_per_1000 * qty / 1000) * 100) / 100 : 0;
+  const corn = corners && C.corners_per_1000 ? Math.round((C.corners_per_1000 * qty / 1000) * 100) / 100 : 0;
   const total = Math.round((base + corn) * 100) / 100;
   return { base, corners: corn, total, perCard: total / qty };
 }
@@ -292,29 +295,29 @@ async function cxEditSettings(S, which, rolls) {
   return r.ok;
 }
 
-async function cxEditCards(S) {
-  const C = S.cards, values = { corners: C.corners_per_1000 }, fields = [];
+async function cxEditCards(S, prod = "cards", what = "cartões de visita") {
+  const C = S[prod], hasCorners = prod === "cards", values = hasCorners ? { corners: C.corners_per_1000 } : {}, fields = [];
   for (const t of C.tiers) { values["f" + t.q] = t.f; values["b" + t.q] = t.b; }
   for (const t of C.tiers) {
     fields.push({ key: "f" + t.q, label: `Pack ${t.q} · Frente (€)`, type: "number", dec: 2 }, { key: "b" + t.q, label: `Pack ${t.q} · Frente e Verso (€)`, type: "number", dec: 2 });
   }
-  fields.push({ key: "corners", label: "Cantos redondos: acréscimo no pack de 1000 (€)", type: "number", dec: 2 });
+  if (hasCorners) fields.push({ key: "corners", label: "Cantos redondos: acréscimo no pack de 1000 (€)", type: "number", dec: 2 });
   const vals = await formDialog({
-    title: "Preços — cartões de visita", wide: true, values, fields, ok: "Guardar",
+    title: `Preços — ${what}`, wide: true, values, fields, ok: "Guardar",
     intro: "Preços do pack, sem IVA. Quantidades fora da tabela usam o preço por unidade do escalão mais baixo, sem passar o preço do escalão seguinte.",
     validate: (v) => cxBad(v, fields.map((f) => ({ key: f.key, label: f.label }))),
   });
   if (!vals) return false;
   const next = JSON.parse(JSON.stringify(S));
-  next.cards.corners_per_1000 = vals.corners;
-  next.cards.tiers = C.tiers.map((t) => ({ q: t.q, f: vals["f" + t.q], b: vals["b" + t.q] }));
+  if (hasCorners) next.cards.corners_per_1000 = vals.corners;
+  next[prod].tiers = C.tiers.map((t) => ({ q: t.q, f: vals["f" + t.q], b: vals["b" + t.q] }));
   const r = await run(() => API.saveCalcSettings(next));
   if (r.ok) toast("Preços guardados.");
   return r.ok;
 }
 
 /* ---------- página ---------- */
-const cxState = { tab: "print", profile: "photo", mode: null, fmt: "A0", rollId: null, w: "", l: "", copies: "1", extra: "", tapeId: "", vextra: "", csides: "f", cqty: "250", ccorners: false, vlines: [{ vinylId: null, w: "", l: "", copies: "1" }] };
+const cxState = { tab: "print", profile: "photo", mode: null, fmt: "A0", rollId: null, w: "", l: "", copies: "1", extra: "", tapeId: "", vextra: "", csides: "f", fsize: "a6", fsides: "f", fqty: "250", cqty: "250", ccorners: false, vlines: [{ vinylId: null, w: "", l: "", copies: "1" }] };
 const cxLine = (lab, val, strong) => h("div", { class: "calc-line" + (strong ? " strong" : "") }, h("span", {}, lab), h("b", {}, val));
 const cxNumIn = (txt) => { try { return Math.max(0, parseNumber(txt)); } catch { return 0; } };
 const cxField = (lab, el, hint) => h("label", { class: "field block" }, h("span", { class: "lab" }, lab), el, hint ? h("span", { class: "muted small" }, hint) : null);
@@ -323,7 +326,7 @@ async function pageCalc(root) {
   const load = await run(async () => ({ rolls: await API.rolls(), vinyls: await API.vinyls(), tapes: await API.tapes(), s: await API.calcSettings() }));
   if (!load.ok) return;
   const { rolls, vinyls, tapes } = load.value; const S = cxNormalize(load.value.s);
-  const tabs = h("div", { class: "tabs" }, [["print", "Impressão"], ["vinyl", "Vinil de recorte"], ["cards", "Cartões de visita"]].map(([k, t]) =>
+  const tabs = h("div", { class: "tabs" }, [["print", "Impressão"], ["vinyl", "Vinil de recorte"], ["cards", "Cartões de visita"], ["flyers", "Flyers"]].map(([k, t]) =>
     h("button", { type: "button", class: "tab" + (cxState.tab === k ? " on" : ""), onclick: () => { cxState.tab = k; refresh(); } }, t)));
 
   const body = h("div");
@@ -331,9 +334,11 @@ async function pageCalc(root) {
     ? [btn("Editar custos e margem", async () => { if (await cxEditSettings(S, cxState.profile, rolls)) refresh(); }), btn("Gerir rolos", async () => { await manageRolls(); refresh(); })]
     : cxState.tab === "cards"
     ? [btn("Editar preços", async () => { if (await cxEditCards(S)) refresh(); })]
+    : cxState.tab === "flyers"
+    ? [btn("Editar preços", async () => { const k = cxState.fsize === "a5" ? "flyer_a5" : "flyer_a6"; if (await cxEditCards(S, k, `flyers ${cxState.fsize === "a5" ? "A5" : "A6"}`)) refresh(); })]
     : [btn("Editar custos e margem", async () => { if (await cxEditSettings(S, "vinyl", rolls)) refresh(); }), btn("Gerir vinis", async () => { await manageVinyls(); refresh(); }), btn("Gerir fitas", async () => { await manageTapes(); refresh(); })];
   root.append(pageHeader("Calculadora", ...actions), tabs, body);
-  if (cxState.tab === "print") cxPrintTab(body, S, rolls); else if (cxState.tab === "cards") cxCardsTab(body, S); else cxVinylTab(body, S, vinyls, tapes);
+  if (cxState.tab === "print") cxPrintTab(body, S, rolls); else if (cxState.tab === "cards") cxCardsTab(body, S); else if (cxState.tab === "flyers") cxFlyersTab(body, S); else cxVinylTab(body, S, vinyls, tapes);
 }
 
 function cxPrintTab(body, S, rolls) {
@@ -476,6 +481,28 @@ function cxCardsTab(body, S) {
   body.append(h("div", { class: "calc-grid" },
     h("div", { class: "card" }, h("h2", { class: "serif" }, "Cartões de visita"),
       cxField("Impressão", sides), cxField("Quantidade", qty), h("label", { class: "check" }, corners, "Cantos redondos")),
+    h("div", { class: "card" }, h("h2", { class: "serif" }, "Preço"), out, sv.el)));
+  update();
+}
+
+function cxFlyersTab(body, S) {
+  const out = h("div", { class: "calc-out" }), sv = cxSaveButton();
+  const size = h("select", {}, [["a6", "A6"], ["a5", "A5"]].map(([k, t]) => h("option", { value: k }, t))); size.value = cxState.fsize;
+  size.addEventListener("change", () => { cxState.fsize = size.value; refresh(); });
+  const sides = h("select", {}, [["f", "Só frente"], ["fb", "Frente e verso"]].map(([k, t]) => h("option", { value: k }, t))); sides.value = cxState.fsides;
+  sides.addEventListener("change", () => { cxState.fsides = sides.value; update(); });
+  const qty = h("input", { type: "text", inputMode: "numeric", value: cxState.fqty, autocomplete: "off", oninput: (e) => { cxState.fqty = e.target.value; update(); } });
+  function update() {
+    clear(out); sv.set(null);
+    const q = Math.round(cxNumIn(qty.value));
+    if (!(q >= 1)) { out.append(h("p", { class: "muted" }, "Indique a quantidade de flyers.")); return; }
+    const r = cxCards(S, sides.value, q, false, size.value === "a5" ? "flyer_a5" : "flyer_a6");
+    out.append(h("div", { class: "calc-final" }, h("span", {}, "PREÇO FINAL (sem IVA)"), h("b", {}, cxEur(r.total))),
+      cxLine("Preço por flyer", `${numText(r.perCard, 3)} €`));
+    sv.set({ name: `Flyers ${size.value === "a5" ? "A5" : "A6"} - ${sides.value === "fb" ? "Frente e Verso" : "Frente"} - Pack ${q}`, category: "impressao", cents: Math.round(r.total * 100) });
+  }
+  body.append(h("div", { class: "calc-grid" },
+    h("div", { class: "card" }, h("h2", { class: "serif" }, "Flyers"), cxField("Formato", size), cxField("Impressão", sides), cxField("Quantidade", qty)),
     h("div", { class: "card" }, h("h2", { class: "serif" }, "Preço"), out, sv.el)));
   update();
 }

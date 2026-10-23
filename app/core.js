@@ -125,6 +125,18 @@ function totalsOf(lines, withCost) {
   return { net_cents: net, vat_cents: vat, gross_cents: net + vat, cost_cents: cost, margin_cents: net - cost };
 }
 
+
+/* cobrança: só trabalhos Completo/Entregue ainda não pagos; em atraso 1 dia depois de ficarem Completo */
+function payInfo(j, gross) {
+  if (!j || j.paid || (j.status !== "Completo" && j.status !== "Entregue")) return null;
+  const total = gross != null ? gross : (j.gross_cents != null ? j.gross_cents : null);
+  const missing = total == null ? null : Math.max(total - Number(j.paid_amount_cents || 0), 0);
+  if (missing === 0) return null;
+  const since = j.ready_on ? daysBetween(j.ready_on, todayISO()) : 0;
+  return { missing, since, overdue: since >= 1 };
+}
+const payText = (pi) => (pi.missing == null ? "" : ` · falta ${eur(pi.missing)}`);
+
 /* ---------- texto ---------- */
 function slug(text) {
   const s = String(text || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
@@ -357,6 +369,7 @@ const API = {
   save: (table, data) => rpc("wp_upsert", { p_table: table, p_data: data }),
   remove: (table, id) => rpc("wp_delete", { p_table: table, p_id: id }),
   deleteFile: (id) => rpc("wp_delete_file", { p_id: id }),
+  markJobPaid: (id) => rpc("wp_mark_job_paid", { p_id: id }),
   completeTask: (id) => rpc("wp_complete_task", { p_id: id, p_today: todayISO() }),
   reopenTask: (id) => rpc("wp_reopen_task", { p_id: id }),
   saveQuote: (data, lines) => rpc("wp_save_quote", { p_data: data, p_lines: lines, p_today: todayISO() }),

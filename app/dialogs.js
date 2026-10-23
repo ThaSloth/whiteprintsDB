@@ -334,7 +334,7 @@ async function showJob({ jobId, clientId }) {
       F.pay = h("select", {}, [["por pagar", "Por pagar"], ["parcial", "Parcialmente pago"], ["pago", "Pago"]].map(([v, t]) => h("option", { value: v }, t)));
       F.pay.value = payState0;
       F.paidAmt = h("input", { type: "text", inputMode: "decimal", placeholder: "Valor já pago (€)", value: job && !job.paid && Number(job.paid_amount_cents) > 0 ? centsText(job.paid_amount_cents) : "" });
-      const payInfo = h("span", { class: "muted pay-info" });
+      const payNote = h("span", { class: "muted pay-info" });
       F.notes = h("textarea", { rows: 2, value: (job && job.notes) || "" });
       const editor = linesEditor({ catalog, withCost: true, lines: job ? job.items : [] });
       const err = h("p", { class: "danger form-error", hidden: true });
@@ -342,11 +342,11 @@ async function showJob({ jobId, clientId }) {
       const grossNow = () => { try { return totalsOf(editor.getLines(), false).gross_cents; } catch { return null; } };
       const updatePay = () => {
         F.paidAmt.hidden = F.pay.value !== "parcial";
-        payInfo.textContent = "";
+        payNote.textContent = "";
         if (F.pay.value === "parcial") {
           const g = grossNow(); let paid = 0;
           try { paid = parseEur(F.paidAmt.value); } catch { return; }
-          if (g != null && paid > 0) payInfo.textContent = `Em falta: ${eur(Math.max(g - paid, 0))} (total c/ IVA ${eur(g)})`;
+          if (g != null && paid > 0) payNote.textContent = `Em falta: ${eur(Math.max(g - paid, 0))} (total c/ IVA ${eur(g)})`;
         }
       };
       F.pay.addEventListener("change", updatePay); F.paidAmt.addEventListener("input", updatePay);
@@ -355,6 +355,7 @@ async function showJob({ jobId, clientId }) {
 
       const head = h("div", { class: "dialog-title" });
       const origin = h("p", { class: "muted" });
+      const banner = h("div", { class: "pay-banner", hidden: true });
       const tabsBar = h("div", { class: "tabs" });
       const tabBody = h("div", { class: "tab-body" });
       let tab = "itens", filesP = null;
@@ -372,6 +373,15 @@ async function showJob({ jobId, clientId }) {
         if (job.delivered_on) bits.push(`Entregue em ${fmtDateFull(job.delivered_on)}`);
         origin.textContent = bits.join(" · ");
         origin.hidden = !bits.length;
+        clear(banner); banner.hidden = true;
+        const pi = payInfo(job, grossNow());
+        if (pi) {
+          banner.hidden = false; banner.className = "pay-banner " + (pi.overdue ? "late" : "soon");
+          const paidTxt = Number(job.paid_amount_cents) > 0 ? ` (${eur(job.paid_amount_cents)} já pagos)` : "";
+          banner.append(h("span", {}, h("b", {}, pi.overdue ? "Em atraso" : "Por cobrar"), pi.missing != null ? `: ${eur(pi.missing)}${paidTxt}` : "",
+            pi.overdue ? ` · completo há ${pi.since} dia(s)` : ""),
+            btn("Marcar como pago", async () => { if ((await run(() => API.markJobPaid(job.id))).ok) { toast("Marcado como pago."); await reload(); F.pay.value = "pago"; updatePay(); } }));
+        }
       }
       async function reload() {
         const r = await run(() => API.job(job.id));
@@ -442,9 +452,9 @@ async function showJob({ jobId, clientId }) {
           h("label", { class: "field" }, h("span", { class: "lab" }, "Prioridade"), F.priority),
           h("label", { class: "field" }, h("span", { class: "lab" }, "Prazo"), F.due),
           h("label", { class: "field" }, h("span", { class: "lab" }, "Fatura"), F.invoice),
-          h("label", { class: "field" }, h("span", { class: "lab" }, "Pagamento"), F.pay, F.paidAmt, payInfo)));
+          h("label", { class: "field" }, h("span", { class: "lab" }, "Pagamento"), F.pay, F.paidAmt, payNote)));
       renderHead(); renderTabs();
-      return h("div", { class: "modal-body" }, head, origin, grid,
+      return h("div", { class: "modal-body" }, head, origin, banner, grid,
         h("label", { class: "field block" }, h("span", { class: "lab" }, "Notas"), F.notes),
         tabsBar, tabBody, err,
         h("div", { class: "modal-foot" },

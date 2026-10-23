@@ -8,7 +8,11 @@ const F = {   // filtros que se mantêm enquanto a janela está aberta
   tasks: { who: "me", done: false, q: "" }, clientTab: "Trabalhos", pendingJobStatus: null,
 };
 
-const payLabel = (j) => (j.paid ? "Pago" : Number(j.paid_amount_cents) > 0 ? `Parcial · ${eur(j.paid_amount_cents)}` : "Por pagar");
+const payLabel = (j) => {
+  const pi = payInfo(j);
+  if (pi) return h("span", { class: pi.overdue ? "danger" : "warn" }, (pi.overdue ? "Em atraso" : "Por cobrar") + payText(pi));
+  return j.paid ? "Pago" : Number(j.paid_amount_cents) > 0 ? `Parcial · ${eur(j.paid_amount_cents)}` : "Por pagar";
+};
 function searchBox(placeholder, value, onInput) {
   return h("input", { type: "search", class: "search", placeholder, value, oninput: debounce((e) => onInput(e.target.value), 120) });
 }
@@ -32,14 +36,25 @@ async function pageToday(root) {
   const shown = new Set([...a.overdue_tasks, ...a.due_tasks].map((t) => t.id));
   const evRow = (ev) => rowCard(`${ev.start_time ? fmtTime(ev.start_time) + " · " : ""}${ev.title}`, eventSubtitle(ev), ev.start_on < todayISO() ? todayISO() : ev.start_on,
     async () => { if (await editEvent(ev)) refresh(); }, { status: ev.kind });
+  const unpaid = a.unpaid_jobs || [];
+  const unpaidTotal = unpaid.reduce((t, j) => t + (payInfo(j) ? payInfo(j).missing || 0 : 0), 0);
+  const unpaidRow = (j) => {
+    const pi = payInfo(j); if (!pi) return null;
+    return h("div", { class: "row-card", tabindex: 0, onclick: (e) => { if (!e.target.closest("button")) openJob({ jobId: j.id }); } },
+      h("div", { class: "grow" }, h("b", {}, `${j.reference} · ${j.title}`), h("div", { class: "muted" }, [j.client_name, pi.since >= 1 ? `completo há ${pi.since} dia(s)` : "completo hoje"].join(" · "))),
+      h("span", { class: pi.overdue ? "danger b" : "warn b" }, `${pi.overdue ? "Em atraso" : "Por cobrar"}${payText(pi)}`),
+      btn("Marcar como pago", async () => { if ((await run(() => API.markJobPaid(j.id))).ok) { toast("Marcado como pago."); refresh(); } }));
+  };
+  const unpaidRows = unpaid.map(unpaidRow).filter(Boolean);
   const sections = [
     ["Agenda · próximos 7 dias", (a.events || []).map(evRow)],
     ["Atrasado", [...a.overdue_jobs.map(jobRow), ...a.overdue_tasks.map(taskRow)]],
+    [`Por cobrar${unpaidTotal ? " · " + eur(unpaidTotal) : ""}`, unpaidRows, true],
     ["Próximos 7 dias", [...a.due_jobs.map(jobRow), ...a.due_tasks.map(taskRow)]],
     ["As minhas tarefas", a.mine.filter((t) => !shown.has(t.id)).slice(0, 10).map(taskRow)],
   ].filter(([, rows]) => rows.length);
   root.append(h("h1", { class: "serif greet" }, `${hello}, ${S.me ? S.me.name : ""}`), h("p", { class: "muted" }, longDate(todayISO())), kpis,
-    sections.length ? sections.map(([t, rows]) => h("section", {}, sectionLabel(`${t}  ·  ${rows.length}`), h("div", { class: "rows" }, rows)))
+    sections.length ? sections.map(([t, rows, money]) => h("section", {}, sectionLabel(money ? `${t}  ·  ${rows.length} trabalho(s)` : `${t}  ·  ${rows.length}`), h("div", { class: "rows" }, rows)))
       : emptyNote("Nada atrasado nem a vencer esta semana. Boa altura para adiantar trabalho."));
 }
 function rowCard(title, subtitle, due, onClick, { status, taskId } = {}) {
