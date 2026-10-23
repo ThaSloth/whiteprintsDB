@@ -12,7 +12,7 @@ const refresh = () => (window.renderPage ? window.renderPage() : null);
 /* ---------- clientes, contactos ---------- */
 async function editClient(client) {
   const vals = await formDialog({
-    title: client ? "Editar cliente" : "Novo cliente", values: client || { source: "outro", status: "lead" }, required: ["name"],
+    title: client ? "Editar cliente" : "Novo cliente", values: client || { source: "outro", status: "lead" }, required: ["name"], validate: checkPhone,
     fields: [
       { key: "name", label: "Nome" }, { key: "tax_id", label: "NIF" }, { key: "email", label: "Email" },
       { key: "phone", label: "Telefone" }, { key: "address", label: "Morada" },
@@ -28,7 +28,7 @@ async function editClient(client) {
 
 async function editContact(clientId, contact) {
   const vals = await formDialog({
-    title: contact ? "Editar contacto" : "Novo contacto", values: contact || {}, required: ["name"],
+    title: contact ? "Editar contacto" : "Novo contacto", values: contact || {}, required: ["name"], validate: checkPhone,
     fields: [
       { key: "name", label: "Nome" }, { key: "role", label: "Cargo" }, { key: "email", label: "Email" },
       { key: "phone", label: "Telefone" }, { key: "is_primary", label: "Principal", type: "checkbox", text: "Contacto principal deste cliente" },

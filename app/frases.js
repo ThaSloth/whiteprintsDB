@@ -372,3 +372,23 @@ function fraseDoDia(date = new Date()) {
   const y = date.getFullYear(), start = new Date(y, 0, 0), doy = Math.floor((date - start) / 86400000);
   return FRASES[((doy - 1) + (y - 2026) * 97 + FRASES.length * 1000) % FRASES.length];
 }
+
+/* momentos do dia: símbolo branco (negativo sobre a faixa preta) */
+function _raios(cx, cy, r1, r2, angs, w) {
+  return angs.map((a) => { const t = a * Math.PI / 180;
+    return `<line x1="${(cx + r1 * Math.cos(t)).toFixed(1)}" y1="${(cy + r1 * Math.sin(t)).toFixed(1)}" x2="${(cx + r2 * Math.cos(t)).toFixed(1)}" y2="${(cy + r2 * Math.sin(t)).toFixed(1)}" stroke="#fff" stroke-width="${w}" stroke-linecap="round"/>`; }).join("");
+}
+const _estrela = (x, y, s) => `<path d="M${x} ${y - s}Q${x} ${y} ${x + s} ${y}Q${x} ${y} ${x} ${y + s}Q${x} ${y} ${x - s} ${y}Q${x} ${y} ${x} ${y - s}Z" fill="#fff"/>`;
+const _lua = (cx, cy, r, off, id) => `<mask id="${id}"><rect width="64" height="64" fill="#fff"/><circle cx="${cx + off}" cy="${cy - off * 0.4}" r="${r * 0.88}" fill="#000"/></mask><circle cx="${cx}" cy="${cy}" r="${r}" fill="#fff" mask="url(#${id})"/>`;
+const MOMENTOS = {
+  madrugada: ["Madrugada", _lua(28, 34, 17, 13, "mlua1") + _estrela(47, 15, 5) + _estrela(52, 34, 3) + _estrela(40, 50, 3.5) + _estrela(14, 14, 3)],
+  amanhecer: ["Amanhecer", '<path d="M14 42A18 18 0 0 1 50 42Z" fill="#fff"/>' + _raios(32, 42, 24, 31, [-170, -140, -110, -70, -40, -10], 3) + '<rect x="6" y="46" width="52" height="3" rx="1.5" fill="#fff"/><rect x="16" y="53" width="32" height="3" rx="1.5" fill="#fff"/>'],
+  dia: ["Dia", '<circle cx="32" cy="32" r="11" fill="#fff"/>' + _raios(32, 32, 17, 25, [0, 45, 90, 135, 180, 225, 270, 315], 3.5)],
+  entardecer: ["Entardecer", '<path d="M13 40A19 19 0 0 1 51 40Z" fill="#fff"/><rect x="8" y="33" width="48" height="2.2" fill="#1d1d1b"/><rect x="8" y="37.5" width="48" height="2.4" fill="#1d1d1b"/><rect x="6" y="44" width="52" height="3" rx="1.5" fill="#fff"/><rect x="14" y="50" width="36" height="3" rx="1.5" fill="#fff"/>'],
+  noite: ["Noite", _lua(30, 33, 19, 12, "mlua2") + _estrela(48, 16, 5) + _estrela(52, 38, 3) + _estrela(20, 12, 3)],
+};
+function momentoDoDia(date = new Date()) {
+  const h = date.getHours();
+  const k = h < 6 ? "madrugada" : h < 9 ? "amanhecer" : h < 17 ? "dia" : h < 20 ? "entardecer" : "noite";
+  return { key: k, nome: MOMENTOS[k][0], svg: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${MOMENTOS[k][1]}</svg>` };
+}

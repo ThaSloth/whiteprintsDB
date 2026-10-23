@@ -251,6 +251,35 @@ function inform(title, message, { error = false } = {}) {
       h("div", { class: "modal-foot" }, h("div", { class: "spacer" }), h("button", { type: "button", class: "btn primary", autofocus: true, onclick: () => close() }, "Ok"))),
   });
 }
+/* ---------- telefones: +351 912 345 678 ---------- */
+// Devolve o número formatado, "" se vazio, ou null se for inválido.
+function fmtPhone(raw) {
+  let t = String(raw == null ? "" : raw).trim();
+  if (!t) return "";
+  let plus = t.startsWith("+");
+  let d = t.replace(/\D/g, "");
+  if (!plus && d.startsWith("00")) { plus = true; d = d.slice(2); }
+  if (!plus) { if (d.length === 9) d = "351" + d; else if (d.startsWith("351") && d.length === 12) { /* já tem indicativo */ } else return null; }
+  if (d.length < 8 || d.length > 15) return null;
+  let cc;
+  if (d.startsWith("351")) cc = "351";
+  else if (/^[17]/.test(d)) cc = d.slice(0, 1);
+  else if (/^(2[1-9]|35|37|38|42|50|59|67|68|69|80|85|88|96|97|98|99)/.test(d)) cc = d.slice(0, 3);
+  else cc = d.slice(0, 2);
+  const rest = d.slice(cc.length);
+  if (cc === "351" && rest.length !== 9) return null;
+  const g = rest.match(/\d{1,3}/g);
+  if (g.length > 1 && g[g.length - 1].length < 3) { const last = g.pop(); g[g.length - 1] += last; }
+  return `+${cc} ${g.join(" ")}`;
+}
+// Para usar em validate(): normaliza v.phone e devolve mensagem se inválido.
+function checkPhone(v) {
+  const f = fmtPhone(v.phone);
+  if (f === null) return "Telefone inválido. Use por exemplo +351 912 345 678 (9 dígitos, ou indicativo + número).";
+  v.phone = f || null;
+  return null;
+}
+
 let toastTimer;
 function toast(message) {
   let el = document.getElementById("toast");

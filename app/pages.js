@@ -26,7 +26,7 @@ function selectBox(options, value, onChange) {
 async function pageToday(root) {
   const a = await API.home(S.me && S.me.id);
   const hour = new Date().getHours();
-  const hello = hour < 12 ? "Bom dia" : hour < 20 ? "Boa tarde" : "Boa noite";
+  const hello = hour < 6 ? "Boa noite" : hour < 12 ? "Bom dia" : hour < 20 ? "Boa tarde" : "Boa noite";
   const jobRow = (j) => rowCard(`${j.reference} · ${j.title}`, [j.client_name, `Prioridade ${PRIORITIES[j.priority].toLowerCase()}`].filter(Boolean).join(" · "),
     j.due_date, () => openJob({ jobId: j.id }), { status: j.status });
   const taskRow = (t) => rowCard(t.title, [t.client_name, t.job_ref, t.assignee_name].filter(Boolean).join(" · "), t.due_date,
@@ -54,9 +54,14 @@ async function pageToday(root) {
     ["As minhas tarefas", a.mine.filter((t) => !shown.has(t.id)).slice(0, 10).map(taskRow)],
   ].filter(([, rows]) => rows.length);
   root.append(h("h1", { class: "serif greet" }, `${hello}, ${S.me ? S.me.name : ""}`), h("p", { class: "muted" }, longDate(todayISO())),
-    h("div", { class: "mindful" }, h("span", { class: "lab2" }, "Frase do dia"), h("q", {}, fraseDoDia())), kpis,
+    mindfulBox(), kpis,
     sections.length ? sections.map(([t, rows, money]) => h("section", {}, sectionLabel(money ? `${t}  ·  ${rows.length} trabalho(s)` : `${t}  ·  ${rows.length}`), h("div", { class: "rows" }, rows)))
       : emptyNote("Nada atrasado nem a vencer esta semana. Boa altura para adiantar trabalho."));
+}
+function mindfulBox() {
+  const m = momentoDoDia(), icon = h("span", { class: "mf-icon", title: m.nome });
+  icon.innerHTML = m.svg;
+  return h("div", { class: "mindful" }, h("div", { class: "mf-text" }, h("span", { class: "lab2" }, `Frase do dia · ${m.nome}`), h("q", {}, fraseDoDia())), icon);
 }
 function rowCard(title, subtitle, due, onClick, { status, taskId } = {}) {
   const late = due && daysBetween(todayISO(), due) < 0;
