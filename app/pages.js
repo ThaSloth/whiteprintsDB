@@ -54,9 +54,36 @@ async function pageToday(root) {
     ["As minhas tarefas", a.mine.filter((t) => !shown.has(t.id)).slice(0, 10).map(taskRow)],
   ].filter(([, rows]) => rows.length);
   root.append(h("h1", { class: "serif greet" }, `${hello}, ${S.me ? S.me.name : ""}`), h("p", { class: "muted" }, longDate(todayISO())),
-    mindfulBox(), kpis,
+    mindfulBox(), goalBox(a), kpis,
     sections.length ? sections.map(([t, rows, money]) => h("section", {}, sectionLabel(money ? `${t}  ·  ${rows.length} trabalho(s)` : `${t}  ·  ${rows.length}`), h("div", { class: "rows" }, rows)))
       : emptyNote("Nada atrasado nem a vencer esta semana. Boa altura para adiantar trabalho."));
+}
+/* Faturado no mês (total com IVA dos trabalhos que passaram a Completo/Entregue) vs objetivo partilhado. */
+function goalBox(a) {
+  const billed = Number(a.month_billed_cents || 0), goal = Number(a.month_goal_cents || 0);
+  const now = new Date(), month = now.toLocaleDateString("pt-PT", { month: "long" });
+  const daysLeft = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate();
+  const pct = goal > 0 ? Math.round((billed / goal) * 100) : 0, C = 188.5;
+  const reached = goal > 0 && billed >= goal, missing = Math.max(0, goal - billed);
+  const svg = h("span", { class: "goal-ring" });
+  svg.innerHTML = `<svg width="74" height="74" viewBox="0 0 74 74" role="img" aria-label="${pct}% do objetivo"><circle cx="37" cy="37" r="30" fill="none" stroke="#ebe8e0" stroke-width="9"/>`
+    + `<circle cx="37" cy="37" r="30" fill="none" stroke="${reached ? "#24604a" : "#1d1d1b"}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(Math.min(pct, 100) / 100 * C).toFixed(1)} ${C}" transform="rotate(-90 37 37)"/>`
+    + `<text x="37" y="42" text-anchor="middle" font-size="${pct >= 100 ? 14 : 16}" font-weight="700" fill="#1d1d1b">${pct}%</text></svg>`;
+  const edit = async () => {
+    const vals = await formDialog({
+      title: "Objetivo mensal de faturação", values: { goal: goal / 100 }, ok: "Guardar", required: ["goal"],
+      intro: "Valor a faturar por mês (com IVA). É o mesmo para os dois.", fields: [{ key: "goal", label: "Objetivo (€)", type: "number", dec: 2 }],
+      validate: (v) => (typeof v.goal === "number" && v.goal >= 0 ? null : "Indique um valor válido."),
+    });
+    if (vals && (await run(() => API.setGoal(Math.round(vals.goal * 100)))).ok) { toast("Objetivo guardado."); refresh(); }
+  };
+  const tile = (lab, num, sub, cls) => h("div", { class: "t" }, h("span", { class: "lab2" }, lab), h("span", { class: "n serif " + (cls || "") }, num), sub);
+  return h("div", { class: "goal" },
+    h("div", { class: "t ring" }, svg, h("div", {}, h("div", { class: "lab2" }, month), h("div", { class: "muted small" }, "do objetivo mensal"))),
+    tile("Faturado", eur(billed), h("span", { class: "muted small" }, "este mês")),
+    tile("Objetivo", eur(goal), h("button", { type: "button", class: "linklike", onclick: edit }, "Editar")),
+    reached ? tile("Excedido", "+" + eur(billed - goal), h("span", { class: "muted small" }, "objetivo atingido"), "ok")
+      : tile("Falta", eur(missing), h("span", { class: "muted small" }, daysLeft === 0 ? "último dia do mês" : `${daysLeft} dia${daysLeft === 1 ? "" : "s"} até ao fim do mês`)));
 }
 function mindfulBox() {
   const m = momentoDoDia(), icon = h("span", { class: "mf-icon", title: m.nome });

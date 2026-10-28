@@ -411,6 +411,7 @@ const API = {
   tapes: () => rpc("wp_list_tapes"),
   calcSettings: () => rpc("wp_get_calc"),
   saveCalcSettings: (data) => rpc("wp_save_calc", { p_data: data }),
+  setGoal: (cents) => rpc("wp_set_goal", { p_cents: cents }),
   acceptQuote: (id, v) => rpc("wp_accept_quote", {
     p_id: id, p_title: v.title, p_category: v.category, p_due: v.due_date, p_owner: v.owner_id, p_priority: v.priority, p_today: todayISO(),
   }),
