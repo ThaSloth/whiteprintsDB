@@ -8,10 +8,10 @@
 const JOB_STATUSES = ["Em orçamento", "Adjudicado", "Em produção", "Completo", "Entregue"];
 const CLIENT_SOURCES = ["formulario", "email", "whatsapp", "telefone", "recomendacao", "redes sociais", "presencial", "outro"];
 const CLIENT_STATUSES = ["lead", "ativo", "recorrente", "inativo"];
-const CATEGORIES = ["impressao", "vinil de recorte", "textil dtf", "redes sociais", "foto e video", "design", "outro"];
+const CATEGORIES = ["impressao", "vinil de recorte", "textil dtf", "redes sociais", "foto e video", "design", "mao de obra", "outro"];
 const QUOTE_STATUSES = ["rascunho", "enviado", "aceite", "recusado"];
 const TASK_STATUSES = ["por fazer", "em curso", "feito"];
-const FILE_KINDS = ["briefing", "arte final", "prova", "contrato", "fatura", "foto", "video", "outro"];
+const FILE_KINDS = ["briefing", "arte final", "prova", "contrato", "fatura", "foto", "video", "orçamento", "outro"];
 const PRIORITIES = { 1: "Baixa", 2: "Normal", 3: "Alta", 4: "Urgente" };
 const PRIORITY_COLORS = { 1: "#b9b6ae", 2: "#8a877f", 3: "#d48a1c", 4: "#c0392b" };
 const BUCKET = "whiteprints-files";
@@ -20,7 +20,7 @@ const LABELS = {
   formulario: "Formulário do site", email: "E-mail", whatsapp: "WhatsApp", telefone: "Telefone", recomendacao: "Recomendação",
   "redes sociais": "Redes sociais", presencial: "Presencial", outro: "Outro",
   lead: "Lead", ativo: "Ativo", recorrente: "Recorrente", inativo: "Inativo",
-  impressao: "Impressão", "vinil de recorte": "Vinil de Recorte", "textil dtf": "Têxtil DTF", "foto e video": "Foto e vídeo", design: "Design",
+  impressao: "Impressão", "vinil de recorte": "Vinil de Recorte", "textil dtf": "Têxtil DTF", "foto e video": "Foto e vídeo", design: "Design", "mao de obra": "Mão de Obra", "orçamento": "Orçamento",
   rascunho: "Rascunho", enviado: "Enviado", aceite: "Aceite", recusado: "Recusado",
   "por fazer": "Por fazer", "em curso": "Em curso", feito: "Feito",
   ativa: "Ativa", pausada: "Pausada", terminada: "Terminada",
@@ -391,7 +391,7 @@ const API = {
   tasks: (assignee, showDone) => rpc("wp_list_tasks", { p_assignee: assignee ?? null, p_show_done: !!showDone }),
   retainers: () => rpc("wp_list_retainers", { p_client: null }),
   catalog: (activeOnly) => rpc("wp_list_catalog", { p_active_only: !!activeOnly }),
-  files: (client, job) => rpc("wp_list_files", { p_client: client ?? null, p_job: job ?? null }),
+  files: (client, job, quote) => rpc("wp_list_files", { p_client: client ?? null, p_job: job ?? null, p_quote: quote ?? null }),
   events: (from, to, client, job) => rpc("wp_list_events", { p_from: from ?? null, p_to: to ?? null, p_client: client ?? null, p_job: job ?? null }),
   home: (me) => rpc("wp_home", { p_today: todayISO(), p_days: 7, p_me: me ?? null }),
   dump: () => rpc("wp_dump"),

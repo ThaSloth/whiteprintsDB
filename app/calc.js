@@ -12,6 +12,7 @@ const CX_DEF = {
     prices: { A0: 11.5, A1: 8.5, A2: 6.5, A3: 2.3 } },
   cad_bw: { mode: "format", margin: 0.35, waste: 0.10, ink: 0.10, machine: 0.5, time_fixed_min: 0, time_per_m2_min: 0, labour_hour: 18, fixed_cost: 0, min_price: 0, round_step: 0.05, edge_m: 0.10, gap_m: 0.02,
     prices: { A0: 2.5, A1: 1.45, A2: 1.05, A3: 1.1 } },
+  labour: { hour: 25 },
   ref_rolls: {},
   cards: { corners_per_1000: 20, tiers: [{ q: 100, f: 15, b: 25 }, { q: 250, f: 25, b: 40 }, { q: 500, f: 40, b: 55 }, { q: 1000, f: 60, b: 75 }] },
   flyer_a6: { tiers: [{ q: 100, f: 10, b: 15 }, { q: 250, f: 15, b: 25 }, { q: 500, f: 25, b: 40 }, { q: 1000, f: 40, b: 75 }] },
@@ -37,6 +38,7 @@ function cxNormalize(stored) {
     if (key === "cards" && typeof c.corners_per_1000 === "number") out.cards.corners_per_1000 = c.corners_per_1000;
     if (Array.isArray(c.tiers)) out[key].tiers = out[key].tiers.map((t) => { const o = c.tiers.find((x) => x && x.q === t.q) || {}; return { q: t.q, f: typeof o.f === "number" ? o.f : t.f, b: typeof o.b === "number" ? o.b : t.b }; });
   }
+  if (st.labour && typeof st.labour.hour === "number" && st.labour.hour >= 0) out.labour.hour = st.labour.hour;
   if (st.ref_rolls && typeof st.ref_rolls === "object") out.ref_rolls = { ...st.ref_rolls };
   return out;
 }
@@ -316,8 +318,45 @@ async function cxEditCards(S, prod = "cards", what = "cartões de visita") {
   return r.ok;
 }
 
+/* ---------- mão de obra: horas × valor/hora × trabalhadores (+ extra opcional) ---------- */
+async function cxEditLabour(S) {
+  const vals = await formDialog({
+    title: "Valor por hora — mão de obra", values: { hour: S.labour.hour }, ok: "Guardar", required: ["hour"],
+    intro: "Valor por hora, sem IVA, que a calculadora propõe por defeito.",
+    fields: [{ key: "hour", label: "Valor por hora (€)", type: "number", dec: 2 }],
+    validate: (v) => (typeof v.hour === "number" && v.hour >= 0 ? null : "Indique um valor por hora válido."),
+  });
+  if (!vals) return false;
+  const next = JSON.parse(JSON.stringify(S)); next.labour = { hour: vals.hour };
+  const r = await run(() => API.saveCalcSettings(next));
+  if (r.ok) toast("Valor por hora guardado.");
+  return r.ok;
+}
+function cxLabourTab(body, S) {
+  if (cxState.lrate == null) cxState.lrate = numText(S.labour.hour, 2);
+  const out = h("div", { class: "calc-out" }), sv = cxSaveButton();
+  const mk = (key, extra) => h("input", { type: "text", inputMode: "decimal", value: cxState[key], autocomplete: "off", ...extra, oninput: (e) => { cxState[key] = e.target.value; update(); } });
+  const hours = mk("lhours", { placeholder: "ex.: 3 ou 1,5" }), rate = mk("lrate"), workers = mk("lworkers", { inputMode: "numeric" }), extra = mk("lextra", { placeholder: "0,00" });
+  function update() {
+    clear(out); sv.set(null);
+    const hr = cxNumIn(hours.value), rt = cxNumIn(rate.value), wk = Math.round(cxNumIn(workers.value)), ex = cxNumIn(extra.value);
+    if (!(hr > 0)) { out.append(h("p", { class: "muted" }, "Indique as horas de trabalho.")); return; }
+    if (!(wk >= 1)) { out.append(h("p", { class: "muted" }, "Indique o número de trabalhadores (pelo menos 1).")); return; }
+    const labour = Math.round(hr * rt * wk * 100) / 100, total = Math.round((labour + ex) * 100) / 100;
+    out.append(h("div", { class: "calc-final" }, h("span", {}, "PREÇO FINAL (sem IVA)"), h("b", {}, cxEur(total))),
+      cxLine(`${numText(hr, 2)} h × ${cxEur(rt)} × ${wk} ${wk === 1 ? "trabalhador" : "trabalhadores"}`, cxEur(labour)));
+    if (ex > 0) out.append(cxLine("Extra", cxEur(ex)));
+    sv.set({ name: `Mão de Obra - ${numText(hr, 2)} h - ${wk} ${wk === 1 ? "trabalhador" : "trabalhadores"}${ex > 0 ? " + extra" : ""}`, category: "mao de obra", cents: Math.round(total * 100) });
+  }
+  body.append(h("div", { class: "calc-grid" },
+    h("div", { class: "card" }, h("h2", { class: "serif" }, "Mão de obra"), cxField("Horas de trabalho", hours), cxField("Valor por hora (€)", rate),
+      cxField("Nº de trabalhadores", workers), cxField("Extra (€, opcional)", extra, "Deslocação, material, etc.")),
+    h("div", { class: "card" }, h("h2", { class: "serif" }, "Preço"), out, sv.el)));
+  update();
+}
+
 /* ---------- página ---------- */
-const cxState = { tab: "print", profile: "photo", mode: null, fmt: "A0", rollId: null, w: "", l: "", copies: "1", extra: "", tapeId: "", vextra: "", csides: "f", fsize: "a6", fsides: "f", fqty: "250", cqty: "250", ccorners: false, vlines: [{ vinylId: null, w: "", l: "", copies: "1" }] };
+const cxState = { tab: "print", profile: "photo", mode: null, fmt: "A0", rollId: null, w: "", l: "", copies: "1", extra: "", tapeId: "", vextra: "", csides: "f", fsize: "a6", fsides: "f", fqty: "250", cqty: "250", lhours: "", lrate: null, lworkers: "1", lextra: "", ccorners: false, vlines: [{ vinylId: null, w: "", l: "", copies: "1" }] };
 const cxLine = (lab, val, strong) => h("div", { class: "calc-line" + (strong ? " strong" : "") }, h("span", {}, lab), h("b", {}, val));
 const cxNumIn = (txt) => { try { return Math.max(0, parseNumber(txt)); } catch { return 0; } };
 const cxField = (lab, el, hint) => h("label", { class: "field block" }, h("span", { class: "lab" }, lab), el, hint ? h("span", { class: "muted small" }, hint) : null);
@@ -326,7 +365,7 @@ async function pageCalc(root) {
   const load = await run(async () => ({ rolls: await API.rolls(), vinyls: await API.vinyls(), tapes: await API.tapes(), s: await API.calcSettings() }));
   if (!load.ok) return;
   const { rolls, vinyls, tapes } = load.value; const S = cxNormalize(load.value.s);
-  const tabs = h("div", { class: "tabs" }, [["print", "Impressão"], ["vinyl", "Vinil de recorte"], ["cards", "Cartões de visita"], ["flyers", "Flyers"]].map(([k, t]) =>
+  const tabs = h("div", { class: "tabs" }, [["print", "Impressão"], ["vinyl", "Vinil de recorte"], ["cards", "Cartões de visita"], ["flyers", "Flyers"], ["labour", "Mão de obra"]].map(([k, t]) =>
     h("button", { type: "button", class: "tab" + (cxState.tab === k ? " on" : ""), onclick: () => { cxState.tab = k; refresh(); } }, t)));
 
   const body = h("div");
@@ -336,9 +375,11 @@ async function pageCalc(root) {
     ? [btn("Editar preços", async () => { if (await cxEditCards(S)) refresh(); })]
     : cxState.tab === "flyers"
     ? [btn("Editar preços", async () => { const k = cxState.fsize === "a5" ? "flyer_a5" : "flyer_a6"; if (await cxEditCards(S, k, `flyers ${cxState.fsize === "a5" ? "A5" : "A6"}`)) refresh(); })]
+    : cxState.tab === "labour"
+    ? [btn("Editar valor por hora", async () => { if (await cxEditLabour(S)) { cxState.lrate = null; refresh(); } })]
     : [btn("Editar custos e margem", async () => { if (await cxEditSettings(S, "vinyl", rolls)) refresh(); }), btn("Gerir vinis", async () => { await manageVinyls(); refresh(); }), btn("Gerir fitas", async () => { await manageTapes(); refresh(); })];
   root.append(pageHeader("Calculadora", ...actions), tabs, body);
-  if (cxState.tab === "print") cxPrintTab(body, S, rolls); else if (cxState.tab === "cards") cxCardsTab(body, S); else if (cxState.tab === "flyers") cxFlyersTab(body, S); else cxVinylTab(body, S, vinyls, tapes);
+  if (cxState.tab === "print") cxPrintTab(body, S, rolls); else if (cxState.tab === "cards") cxCardsTab(body, S); else if (cxState.tab === "flyers") cxFlyersTab(body, S); else if (cxState.tab === "labour") cxLabourTab(body, S); else cxVinylTab(body, S, vinyls, tapes);
 }
 
 function cxPrintTab(body, S, rolls) {

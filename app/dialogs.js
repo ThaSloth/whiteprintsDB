@@ -189,44 +189,44 @@ async function openStored(path, name, download) {
   else { const a = h("a", { href: data.signedUrl, download: name }); document.body.append(a); a.click(); a.remove(); }
 }
 
-async function uploadFiles(fileList, { client, jobs, jobId, kind, approved, existing }) {
+async function uploadFiles(fileList, { client, jobs, jobId, quote, kind, approved, existing }) {
   const job = jobs.find((j) => j.id === jobId);
-  const folder = `${client.id}-${slug(client.name)}/${job ? job.reference : "geral"}`;
+  const folder = `${client.id}-${slug(client.name)}/${quote ? quote.number : job ? job.reference : "geral"}`;
   let n = 0;
   for (const file of fileList) {
     const path = `${folder}/${Date.now()}-${n++}-${slug(file.name)}`;
     const up = await sb.storage.from(BUCKET).upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
     if (up.error) throw new Error(`«${file.name}»: ${friendly(up.error)}`);
-    const version = 1 + Math.max(0, ...existing.filter((f) => f.name === file.name && (f.job_id ?? null) === (jobId ?? null)).map((f) => f.version));
+    const version = 1 + Math.max(0, ...existing.filter((f) => f.name === file.name && (quote ? f.quote_id === quote.id : (f.job_id ?? null) === (jobId ?? null))).map((f) => f.version));
     try {
-      await API.save("files", { client_id: client.id, job_id: jobId ?? null, name: file.name, kind, storage_path: path, version, approved: !!approved, uploaded_by: S.me ? S.me.id : null });
+      await API.save("files", { client_id: client.id, job_id: jobId ?? null, quote_id: quote ? quote.id : null, name: file.name, kind, storage_path: path, version, approved: !!approved, uploaded_by: S.me ? S.me.id : null });
     } catch (e) { await sb.storage.from(BUCKET).remove([path]); throw e; }
   }
 }
 
 /* Painel de ficheiros de um cliente (todos os trabalhos) ou de um trabalho. */
-function filesPanel({ client, jobId }) {
+function filesPanel({ client, jobId, quote }) {
   const host = h("div", { class: "files-panel" });
   const picker = h("input", { type: "file", multiple: true, hidden: true });
   let rows = [];
 
   async function load() {
-    const r = await run(() => API.files(jobId ? null : client.id, jobId || null));
+    const r = await run(() => (quote ? API.files(null, null, quote.id) : API.files(jobId ? null : client.id, jobId || null)));
     if (!r.ok) return;
     rows = r.value;
     draw();
   }
   async function add(files) {
     if (!files.length) return;
-    const jobs = jobId ? [] : await API.jobs(client.id);
+    const jobs = jobId || quote ? [] : await API.jobs(client.id);
     const jobRow = jobId ? null : null;
     const vals = await formDialog({
-      title: "Adicionar ficheiros", ok: "Enviar", values: { kind: "outro", approved: false },
+      title: "Adicionar ficheiros", ok: "Enviar", values: { kind: quote ? "orçamento" : "outro", approved: false },
       intro: `${files.length} ficheiro(s): ${[...files].map((f) => f.name).join(", ")}`,
       fields: [
         { key: "kind", label: "Tipo", type: "select", options: opts(FILE_KINDS) },
-        ...(jobId ? [] : [{ key: "job_id", label: "Trabalho", type: "select", none: "— sem trabalho (geral)", options: jobs.map((j) => ({ label: `${j.reference} · ${j.title}`, value: j.id })) }]),
-        { key: "approved", label: "Aprovado", type: "checkbox", text: "Já está aprovado (arte final aprovada é copiada ao repetir um trabalho)" },
+        ...(jobId || quote ? [] : [{ key: "job_id", label: "Trabalho", type: "select", none: "— sem trabalho (geral)", options: jobs.map((j) => ({ label: `${j.reference} · ${j.title}`, value: j.id })) }]),
+        ...(quote ? [] : [{ key: "approved", label: "Aprovado", type: "checkbox", text: "Já está aprovado (arte final aprovada é copiada ao repetir um trabalho)" }]),
       ],
     });
     void jobRow;
@@ -234,7 +234,7 @@ function filesPanel({ client, jobId }) {
     const allJobs = jobId ? await API.jobs(client.id) : jobs;
     const r = await run(async () => {
       toast("A enviar…");
-      await uploadFiles(files, { client, jobs: allJobs, jobId: jobId || vals.job_id, kind: vals.kind, approved: vals.approved, existing: rows });
+      await uploadFiles(files, { client, jobs: allJobs, jobId: jobId || vals.job_id, quote, kind: vals.kind, approved: vals.approved, existing: rows });
     });
     if (r.ok) toast("Ficheiros adicionados.");
     await load();
@@ -244,16 +244,17 @@ function filesPanel({ client, jobId }) {
   function draw() {
     clear(host);
     host.append(h("div", { class: "toolbar" }, btn("+ Adicionar ficheiros…", () => picker.click(), "primary"), h("span", { class: "muted" },
-      "Ficam guardados em segurança na cloud, organizados por cliente e trabalho."), picker));
-    const headers = ["Ficheiro", "Tipo"].concat(jobId ? [] : ["Trabalho"], ["Versão", "Aprovado", "Adicionado", ""]);
+      quote ? "Ex.: o orçamento gerado no Vendus. Fica guardado na cloud, ligado a este orçamento." : "Ficam guardados em segurança na cloud, organizados por cliente e trabalho."), picker));
+    const linked = !(jobId || quote);
+    const headers = ["Ficheiro", "Tipo"].concat(linked ? ["Ligado a"] : [], ["Versão"].concat(quote ? [] : ["Aprovado"], ["Adicionado", ""]));
     host.append(table(headers, rows.map((f) => ({
       cells: [
-        { t: f.name, b: true }, label(f.kind), ...(jobId ? [] : [f.job_ref || "—"]), { t: `v${f.version}`, r: true },
-        f.approved ? { t: "✓ Aprovado", c: "ok", b: true } : { t: "—", c: "muted" }, fmtDate(isoOfTimestamp(f.created_at)),
+        { t: f.name, b: true }, label(f.kind), ...(linked ? [f.job_ref || f.quote_ref || "—"] : []), { t: `v${f.version}`, r: true },
+        ...(quote ? [] : [f.approved ? { t: "✓ Aprovado", c: "ok", b: true } : { t: "—", c: "muted" }]), fmtDate(isoOfTimestamp(f.created_at)),
         { node: h("span", { class: "row-actions" },
           btn("Abrir", async () => { const r = await run(() => openStored(f.storage_path, f.name, false)); void r; }),
           btn("Descarregar", async () => { await run(() => openStored(f.storage_path, f.name, true)); }),
-          btn(f.approved ? "Desaprovar" : "Aprovar", async () => { if ((await run(() => API.save("files", { id: f.id, approved: !f.approved }))).ok) load(); }),
+          quote ? null : btn(f.approved ? "Desaprovar" : "Aprovar", async () => { if ((await run(() => API.save("files", { id: f.id, approved: !f.approved }))).ok) load(); }),
           btn("Remover", async () => {
             if (!(await confirmDialog("Remover ficheiro", `Remover «${f.name}»? O ficheiro é apagado da cloud.`, { yes: "Remover", danger: true }))) return;
             const r = await run(async () => {
@@ -263,7 +264,7 @@ function filesPanel({ client, jobId }) {
             if (r.ok) load();
           }, "danger")) },
       ],
-    })), { empty: "Ainda não há ficheiros. Adicione briefings, provas, artes finais, contratos…" }));
+    })), { empty: quote ? "Ainda não há ficheiros neste orçamento." : "Ainda não há ficheiros. Adicione briefings, provas, artes finais, contratos…" }));
   }
   draw();
   load();
@@ -497,6 +498,7 @@ async function showQuote({ quoteId, clientId }) {
       const err = h("p", { class: "danger form-error", hidden: true });
       const head = h("div", { class: "dialog-title" });
       const jobNote = h("p", { class: "muted" });
+      const filesBox = h("div", { class: "quote-files" });
       const foot = h("div", { class: "modal-foot" });
       const problem = (t) => { err.textContent = t; err.hidden = false; return false; };
 
@@ -512,6 +514,11 @@ async function showQuote({ quoteId, clientId }) {
         if (quote && !L) st.value = quote.status;
         jobNote.textContent = L ? (quote.job_ref ? `Aceite — gerou o trabalho ${quote.job_ref}.` : "Aceite.") : "";
         jobNote.hidden = !L;
+        clear(filesBox);
+        if (quote) {
+          filesBox.append(h("h3", { class: "serif" }, "Ficheiros do orçamento"),
+            filesPanel({ client: { id: quote.client_id, name: quote.client_name }, quote }).el);
+        } else filesBox.append(h("p", { class: "muted" }, "Guarde o orçamento primeiro para poder anexar ficheiros (por exemplo o orçamento do Vendus)."));
         client.disabled = !!quote || L; valid.disabled = L; notes.disabled = L; editor.setLocked(L);
         foot.append(quote ? btn("Exportar PDF", exportPdf) : null, h("div", { class: "spacer" }), btn("Fechar", () => close(createdJob ? { jobId: createdJob } : null)),
           quote && !L && quote.status !== "recusado" ? btn("Aceitar e criar trabalho", accept, "primary") : null,
@@ -553,7 +560,7 @@ async function showQuote({ quoteId, clientId }) {
           h("label", { class: "field" }, h("span", { class: "lab" }, "Cliente *"), client),
           h("label", { class: "field" }, h("span", { class: "lab" }, "Válido até"), valid)),
         h("label", { class: "field block" }, h("span", { class: "lab" }, "Notas"), notes),
-        editor.el, err, foot);
+        editor.el, filesBox, err, foot);
     },
   }).then((r) => { createdJob = r && r.jobId ? r.jobId : createdJob; });
   return createdJob ? { jobId: createdJob } : null;
