@@ -344,7 +344,6 @@ async function showJob({ jobId, clientId }) {
       F.due = h("input", { type: "date", value: (job && job.due_date) || "" });
       F.owner = h("select", {}, h("option", { value: "" }, "—"), S.users.map((u) => h("option", { value: u.id }, u.name)));
       F.owner.value = String(job ? (job.owner_id ?? "") : (S.me ? S.me.id : ""));
-      F.invoice = h("input", { type: "text", placeholder: "n.º da fatura no Vendus", value: (job && job.invoice_ref) || "" });
       const payState0 = job ? (job.paid ? "pago" : (Number(job.paid_amount_cents) > 0 ? "parcial" : "por pagar")) : "por pagar";
       F.pay = h("select", {}, [["por pagar", "Por pagar"], ["parcial", "Parcialmente pago"], ["pago", "Pago"]].map(([v, t]) => h("option", { value: v }, t)));
       F.pay.value = payState0;
@@ -488,7 +487,7 @@ async function showJob({ jobId, clientId }) {
         if (!res) return;
         const r = await run(async () => {
           if (res.lines.length) {
-            const data = { id: job.id, title: job.title, priority: job.priority, due_date: job.due_date, owner_id: job.owner_id, invoice_ref: job.invoice_ref,
+            const data = { id: job.id, title: job.title, priority: job.priority, due_date: job.due_date, owner_id: job.owner_id,
               paid: job.paid, paid_amount_cents: job.paid_amount_cents, notes: job.notes };
             const items = [...job.items.map((i) => ({ description: i.description, specs: i.specs, quantity: Number(i.quantity), unit_price_cents: i.unit_price_cents,
               unit_cost_cents: i.unit_cost_cents, vat_rate: Number(i.vat_rate), supplier_id: i.supplier_id, category: i.category })), ...res.lines];
@@ -545,7 +544,7 @@ async function showJob({ jobId, clientId }) {
         }
         const data = {
           title, priority: Number(F.priority.value), due_date: F.due.value || null,
-          owner_id: F.owner.value ? Number(F.owner.value) : null, invoice_ref: F.invoice.value.trim() || null,
+          owner_id: F.owner.value ? Number(F.owner.value) : null,
           paid: F.pay.value === "pago", paid_amount_cents: paidAmount, notes: F.notes.value.trim() || null,
         };
         if (job) data.id = job.id; else data.client_id = Number(F.client.value);
@@ -560,7 +559,6 @@ async function showJob({ jobId, clientId }) {
         h("div", { class: "form-grid" },
           h("label", { class: "field" }, h("span", { class: "lab" }, "Prioridade"), F.priority),
           h("label", { class: "field" }, h("span", { class: "lab" }, "Prazo"), F.due),
-          h("label", { class: "field" }, h("span", { class: "lab" }, "Fatura"), F.invoice),
           h("label", { class: "field" }, h("span", { class: "lab" }, "Pagamento"), F.pay, F.paidAmt, payNote)));
       renderHead(); renderTabs();
       return h("div", { class: "modal-body" }, head, origin, proofBar, banner, grid,

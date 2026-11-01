@@ -66,18 +66,33 @@ async function pageToday(root) {
   const unpaidRows = groups.map((g) => h("div", { class: "row-card", tabindex: 0, "data-client": g.name, onclick: () => openUnpaid(g) },
     h("div", { class: "grow" }, h("b", {}, g.name), h("div", { class: "muted" }, `${g.jobs.length} trabalho${g.jobs.length === 1 ? "" : "s"}`)),
     h("span", { class: g.late ? "danger b" : "warn b" }, g.late ? "Em atraso" : "Por cobrar"), h("b", {}, eur(g.total)), h("span", { class: "muted" }, "›")));
-  const sections = [
-    ["Agenda · próximos 7 dias", (a.events || []).map(evRow)],
-    ["Provas", (a.proofs || []).map(proofRow)],
+  // Seis blocos equilibrados (2 colunas), cada um com 3 espaços fixos; «Ver todos» se houver mais.
+  const slot3 = (title, rows, count) => {
+    const box = h("section", { class: "hb" }), list = h("div", { class: "hb-rows" });
+    let all = false;
+    const draw = () => {
+      clear(list);
+      const shown = all ? rows : rows.slice(0, 3);
+      shown.forEach((r) => list.append(h("div", { class: "slot" }, r)));
+      for (let k = shown.length; k < 3; k++) list.append(h("div", { class: "slot empty" }, k === 0 ? "Nada a apontar" : ""));
+      more.hidden = rows.length <= 3; more.textContent = all ? "Ver menos" : `Ver todos (${rows.length})`;
+    };
+    const more = h("button", { type: "button", class: "hb-more", onclick: () => { all = !all; draw(); } });
+    box.append(h("div", { class: "hb-head" }, h("b", {}, title), h("span", { class: "cnt" + (rows.length ? "" : " l") }, String(count ?? rows.length))), list, more);
+    draw();
+    return box;
+  };
+  const blocks = [
     ["Atrasado", [...a.overdue_jobs.map(jobRow), ...a.overdue_tasks.map(taskRow)]],
-    [`Por cobrar${unpaidTotal ? " · " + eur(unpaidTotal) : ""}`, unpaidRows, true],
-    ["Próximos 7 dias", [...a.due_jobs.map(jobRow), ...a.due_tasks.map(taskRow)]],
+    ["Agenda · 7 dias", (a.events || []).map(evRow)],
+    [`Por cobrar${unpaidTotal ? " · " + eur(unpaidTotal) : ""}`, unpaidRows],
+    ["A vencer · 7 dias", [...a.due_jobs.map(jobRow), ...a.due_tasks.map(taskRow)]],
+    ["Provas", (a.proofs || []).map(proofRow)],
     ["As minhas tarefas", a.mine.filter((t) => !shown.has(t.id)).slice(0, 10).map(taskRow)],
-  ].filter(([, rows]) => rows.length);
+  ];
   root.append(h("h1", { class: "serif greet" }, `${hello}, ${S.me ? S.me.name : ""}`), h("p", { class: "muted" }, longDate(todayISO())),
     mindfulBox(), goalBox(a), compareStrip(a), kpis,
-    sections.length ? sections.map(([t, rows, money]) => h("section", {}, sectionLabel(money ? `${t}  ·  ${rows.length} cliente(s)` : `${t}  ·  ${rows.length}`), h("div", { class: "rows" }, rows)))
-      : emptyNote("Nada atrasado nem a vencer esta semana. Boa altura para adiantar trabalho."));
+    h("div", { class: "hgrid" }, blocks.map(([t, rows]) => slot3(t, rows))));
 }
 /* Faturado no mês (total com IVA dos trabalhos que passaram a Completo/Entregue) vs objetivo partilhado. */
 function goalBox(a) {
