@@ -5,10 +5,12 @@
    ============================================================================= */
 
 /* ---------- listas e nomes ---------- */
-const JOB_STATUSES = ["Em orçamento", "Adjudicado", "Em design", "Em produção", "Completo", "Entregue"];
+const JOB_STATUSES = ["Em orçamento", "Adjudicado", "Em criação", "Em produção", "Completo", "Entregue"];
 /* Categoria de cada linha (item) de um trabalho ou orçamento: decide em que secção o trabalho aparece. */
 const ITEM_CATS = ["design", "impressao", "mao de obra", "outro"];
-const DESIGN_PROOFS = ["Por começar", "Em design", "Prova enviada", "Prova aprovada"];
+const DESIGN_PROOFS = ["Por começar", "Em criação", "Prova enviada", "Prova aprovada"];
+/* Quem fica por defeito com os trabalhos que têm design. */
+const DESIGN_OWNER_NAME = "Marina";
 const PRINT_PROOFS = ["Não precisa", "Por apresentar", "Apresentada ao cliente", "Aprovada"];
 /* Categoria do catálogo → categoria da linha. */
 function itemCatOf(catalogCategory) {
@@ -19,10 +21,10 @@ function itemCatOf(catalogCategory) {
 }
 /* Sequência de estados de um trabalho (igual à da base de dados). */
 function jobOrder(job) {
-  if (job.phase === "design" || job.status === "Em design")
+  if (job.phase === "design" || job.status === "Em criação")
     return job.has_print === false || (job.items && !job.items.some((i) => i.category === "impressao"))
-      ? ["Em orçamento", "Adjudicado", "Em design", "Completo", "Entregue"]
-      : ["Em orçamento", "Adjudicado", "Em design", "Em produção", "Completo", "Entregue"];
+      ? ["Em orçamento", "Adjudicado", "Em criação", "Completo", "Entregue"]
+      : ["Em orçamento", "Adjudicado", "Em criação", "Em produção", "Completo", "Entregue"];
   return ["Em orçamento", "Adjudicado", "Em produção", "Completo", "Entregue"];
 }
 const CLIENT_SOURCES = ["formulario", "email", "whatsapp", "telefone", "recomendacao", "redes sociais", "presencial", "outro"];
@@ -51,7 +53,7 @@ const label = (v) => (v == null || v === "" ? "—" : LABELS[v] || v);
 const opts = (values) => values.map((v) => ({ label: label(v), value: v }));
 
 const STATUS_COLORS = {
-  "Em orçamento": ["#efede7", "#5b5851"], Adjudicado: ["#e3eaf4", "#2d4b78"], "Em design": ["#ebe4f3", "#5a3d80"], "Em produção": ["#f7ebd0", "#85570b"],
+  "Em orçamento": ["#efede7", "#5b5851"], Adjudicado: ["#e3eaf4", "#2d4b78"], "Em criação": ["#ebe4f3", "#5a3d80"], "Em produção": ["#f7ebd0", "#85570b"],
   Completo: ["#dbeee3", "#24604a"], Entregue: ["#e6e4df", "#3d3b36"],
   rascunho: ["#efede7", "#5b5851"], enviado: ["#e3eaf4", "#2d4b78"], aceite: ["#dbeee3", "#24604a"], recusado: ["#f3dedb", "#8f2d1f"],
   reuniao: ["#e3eaf4", "#2d4b78"], instalacao: ["#f7ebd0", "#85570b"], visita: ["#dbeee3", "#24604a"], entrega: ["#e6e4df", "#3d3b36"],
@@ -432,6 +434,7 @@ const API = {
   saveCalcSettings: (data) => rpc("wp_save_calc", { p_data: data }),
   setGoal: (cents, month) => rpc("wp_set_goal", { p_cents: cents, p_month: month || null, p_today: todayISO() }),
   setDesignProof: (id, st) => rpc("wp_set_design_proof", { p_id: id, p_state: st }),
+  startPrint: (id, status, owner) => rpc("wp_start_print", { p_id: id, p_status: status, p_owner: owner ?? null }),
   setPrintProof: (id, st) => rpc("wp_set_print_proof", { p_id: id, p_state: st }),
   monthReport: (month) => rpc("wp_month_report", { p_month: month, p_today: todayISO() }),
   acceptQuote: (id, v) => rpc("wp_accept_quote", {

@@ -29,7 +29,7 @@ async function pageToday(root) {
   const hello = hour < 6 ? "Boa noite" : hour < 12 ? "Bom dia" : hour < 20 ? "Boa tarde" : "Boa noite";
   const jobRow = (j) => rowCard(`${j.reference} · ${j.title}`, [j.client_name, `Prioridade ${PRIORITIES[j.priority].toLowerCase()}`].filter(Boolean).join(" · "),
     j.due_date, () => openJob({ jobId: j.id }), { status: j.status });
-  const taskRow = (t) => rowCard(t.title, [t.client_name, t.job_ref, t.assignee_name].filter(Boolean).join(" · "), t.due_date,
+  const taskRow = (t) => rowCard(t.title, [t.client_name, t.job_ref].filter(Boolean).join(" · "), t.due_date,
     async () => { if (await editTask(t)) refresh(); }, { taskId: t.id });
   const kpis = h("div", { class: "kpis" }, JOB_STATUSES.map((st) => h("button", { type: "button", class: "card kpi", title: `Ver trabalhos «${st}»`,
     onclick: () => { F.jobs.status = st; location.hash = "#/trabalhos"; } }, h("span", { class: "num serif" }, String((a.counts || {})[st] || 0)), h("span", { class: "muted" }, st))));
@@ -206,7 +206,7 @@ async function pageClient(root, id) {
 const PHASE_SECTIONS = [["design", "Design"], ["impressao", "Impressão"], ["outros", "Outros"]];
 /* Prova pendente de um trabalho (digital no design, física no início da impressão). */
 function proofCell(j) {
-  if (j.phase === "design" && ["Adjudicado", "Em design"].includes(j.status)) return j.design_proof === "Por começar" ? { t: "—", c: "muted" } : pill(j.design_proof);
+  if (j.phase === "design" && ["Adjudicado", "Em criação"].includes(j.status)) return j.design_proof === "Por começar" ? { t: "—", c: "muted" } : pill(j.design_proof);
   if (j.phase === "impressao" && j.status === "Adjudicado" && j.print_proof !== "Não precisa") return pill(j.print_proof);
   return { t: "—", c: "muted" };
 }
@@ -219,11 +219,11 @@ async function pageJobs(root) {
     const shown = jobs.filter((j) => (f.status === "all" || (f.status === "open" && j.status !== "Entregue") || j.status === f.status)
       && (!f.owner || String(j.owner_id) === f.owner) && matches(f.q, j.title, j.client_name, j.reference));
     clear(host);
-    const head = ["Ref.", "Trabalho", "Cliente", "Estado", "Prova", "Prioridade", "Prazo", "Responsável", "Pagamento", { t: "Valor s/ IVA", r: true }];
+    const head = ["Ref.", "Trabalho", "Cliente", "Estado", "Prova", "Prioridade", "Prazo", "Pagamento", { t: "Valor s/ IVA", r: true }];
     const rowOf = (j) => ({
       onClick: () => openJob({ jobId: j.id }),
-      cells: [j.reference, { node: h("span", {}, h("b", {}, j.title), j.phase === "design" ? h("div", { class: "muted small" }, j.has_print ? "→ depois: impressão" : "só design") : null) },
-        j.client_name, pill(j.status), proofCell(j), priorityCell(j.priority), dueCell(j.due_date, j.delivered_on, j.status === "Entregue"), j.owner_name || "—", payLabel(j), moneyCell(j.net_cents)],
+      cells: [j.reference, { t: j.title, b: true },
+        j.client_name, pill(j.status), proofCell(j), priorityCell(j.priority), dueCell(j.due_date, j.delivered_on, j.status === "Entregue"), payLabel(j), moneyCell(j.net_cents)],
     });
     let any = false;
     for (const [key, name] of PHASE_SECTIONS) {
@@ -393,11 +393,11 @@ async function pageTasks(root) {
     const f = F.tasks;
     const assignee = f.who === "me" ? (S.me && S.me.id) : f.who === "all" ? null : Number(f.who);
     const rows = (await API.tasks(assignee, f.done)).filter((t) => matches(f.q, t.title, t.description, t.client_name, t.job_title));
-    clear(host).append(table(["", "Tarefa", "Cliente / trabalho", "Responsável", "Prioridade", "Prazo", "Estado"], rows.map((t) => ({
+    clear(host).append(table(["", "Tarefa", "Cliente / trabalho", "Prioridade", "Prazo", "Estado"], rows.map((t) => ({
       onClick: async () => { if (await editTask(t)) refresh(); },
       cells: [{ node: h("input", { type: "checkbox", checked: t.status === "feito", title: t.status === "feito" ? "Reabrir" : "Marcar como feita", "aria-label": "Concluir ou reabrir",
         onchange: async () => { if ((await run(() => (t.status === "feito" ? API.reopenTask(t.id) : API.completeTask(t.id)))).ok) refresh(); } }) },
-        { t: t.title, b: true, c: t.status === "feito" ? "muted" : "" }, [t.client_name, t.job_ref].filter(Boolean).join(" · ") || "—", t.assignee_name || "—", priorityCell(t.priority),
+        { t: t.title, b: true, c: t.status === "feito" ? "muted" : "" }, [t.client_name, t.job_ref].filter(Boolean).join(" · ") || "—", priorityCell(t.priority),
         t.status !== "feito" ? dueCell(t.due_date) : { t: `feito ${fmtDate(t.completed_at)}`, c: "muted" }, pill(t.status)],
     })), { empty: "Sem tarefas. Marque o que tem para fazer com «+ Nova tarefa»." }));
   };

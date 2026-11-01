@@ -280,8 +280,12 @@ details.calc-details summary{cursor:pointer;font-weight:600}
 .lines-table td.cat{min-width:128px}.f-cat{width:100%;padding:6px 8px}
 .f-cat.need{border-color:#d48a1c;background:#fdf3de;box-shadow:0 0 0 2px #f7e2b5}
 .phase-tag{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 9px}
-.proof-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 10px;padding:9px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
-.proof-bar .lab{font-size:12px;letter-spacing:.04em;color:var(--muted)}.proof-bar select{width:auto}
+.proof-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 8px;padding:6px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.proof-bar .lab{font-size:12px;letter-spacing:.04em;color:var(--muted)}.proof-bar .cur{font-weight:600;font-size:13.5px}.proof-bar .spacer{flex:1}
+.btn.sm{padding:4px 10px;font-size:12.5px;min-height:0;border-radius:8px}
+.dots{display:inline-flex;align-items:center}.dots i{width:10px;height:10px;border-radius:50%;border:2px solid #cfcbbf;background:#fff;display:block}
+.dots i.done{background:var(--ok);border-color:var(--ok)}.dots i.on{background:var(--ink);border-color:var(--ink);box-shadow:0 0 0 3px #e8e5dc}
+.dots b{width:22px;height:2px;background:#cfcbbf;display:block}.dots b.done{background:var(--ok)}
 .muted.small,.small{font-size:12px}
 /* faixa de comparação no Hoje */
 .strip{margin-top:8px;display:flex;gap:6px 18px;flex-wrap:wrap;align-items:center;padding:9px 16px;border:1px dashed var(--line);border-radius:12px;font-size:13px;color:var(--muted)}
@@ -303,3 +307,4 @@ details.calc-details summary{cursor:pointer;font-weight:600}
 @media (max-width:860px){.rp-stats{grid-template-columns:repeat(2,1fr)}.rp-grid{grid-template-columns:1fr}.lines-table td.cat{min-width:0}.strip a{margin-left:0}}
 @media print{.rp-h{font:italic 12pt Georgia,serif;margin:16px 0 6px}.rp-chart{margin-bottom:8px}.rp-sum{margin:0 0 6px 0;min-width:340px}}
 @media (max-width:860px){.lines-table td.cat{grid-column:1/-1}}
+@media (max-width:860px){.btn.sm,.row-actions .btn.sm{min-height:32px}}

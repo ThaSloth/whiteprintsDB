@@ -223,7 +223,7 @@ async function pageAgenda(root) {
       h("h3", { class: "section" }, `${longDate(day)}${day === today ? "  ·  hoje" : ""}`),
       h("div", { class: "rows" }, by[day].map((it) => {
         const sub = it.type === "event" ? eventSubtitle(it.ev) : it.type === "job" ? [it.j.client_name, it.j.status].filter(Boolean).join(" · ")
-          : [it.t.client_name, it.t.job_ref, it.t.assignee_name].filter(Boolean).join(" · ");
+          : [it.t.client_name, it.t.job_ref].filter(Boolean).join(" · ");
         const when = it.type === "event" ? eventWhen(it.ev) : it.type === "job" ? "Prazo" : "Tarefa";
         return h("div", { class: "row-card", tabindex: 0, onclick: () => open(it), onkeydown: (e) => { if (e.key === "Enter" && e.target === e.currentTarget) open(it); } },
           h("span", { class: `cal-when ${it.cls}` }, when), h("div", { class: "grow" }, h("b", {}, it.type === "event" ? it.ev.title : it.text.replace(/^(Prazo · |☐ )/, "")),

@@ -105,7 +105,7 @@ async function editCatalogItem(item) {
 }
 
 /* ---------- editor de linhas (itens de trabalhos e orçamentos) ---------- */
-function linesEditor({ catalog, withCost, lines, readOnly }) {
+function linesEditor({ catalog, withCost, lines, readOnly, defaultCat }) {
   const tbody = h("tbody");
   const totalsEl = h("div", { class: "totals" });
   const sel = h("select", { class: "catalog-select" }, catalog.map((c) =>
@@ -129,7 +129,7 @@ function linesEditor({ catalog, withCost, lines, readOnly }) {
     const tr = h("tr", {},
       h("td", {}, inp("f-desc", l.description || "", { placeholder: "Descrição" })),
       h("td", {}, inp("f-specs", l.specs || "", { placeholder: "Especificações" })),
-      h("td", { class: "cat", "data-l": "Categoria" }, catSel(l.category || (l.catalog_item_id != null ? "outro" : ""))),
+      h("td", { class: "cat", "data-l": "Categoria" }, catSel(l.category || (l.catalog_item_id != null ? "outro" : (defaultCat || "")))),
       h("td", { class: "num sm", "data-l": "Qtd" }, inp("f-qty r", numText(l.quantity ?? 1), { inputMode: "decimal" })),
       h("td", { class: "num", "data-l": "Preço (€)" }, inp("f-price r", centsText(l.unit_price_cents || 0), { inputMode: "decimal" })),
       h("td", { class: "num sm", "data-l": "IVA %" }, inp("f-vat r", numText(l.vat_rate ?? 23), { inputMode: "decimal" })),
@@ -191,7 +191,7 @@ function linesEditor({ catalog, withCost, lines, readOnly }) {
   (lines || []).forEach((l) => addLine(l));
   if (!(lines || []).length) recalc();
   if (locked) setLocked(true);
-  return { el, getLines: () => read(true), setLocked };
+  return { el, getLines: () => read(true), setLocked, hasCategory: (c) => [...el.querySelectorAll(".f-cat")].some((s) => s.value === c) };
 }
 
 /* ---------- ficheiros (no armazenamento privado do Supabase) ---------- */
@@ -290,7 +290,8 @@ async function acceptQuoteDialog(quote) {
   return formDialog({
     title: `Aceitar ${quote.number}`, ok: "Criar trabalho", required: ["title"],
     intro: "O orçamento passa a «Aceite» e é criado um trabalho «Adjudicado» com as mesmas linhas. A secção (Design, Impressão ou Outros) vem da categoria das linhas.",
-    values: { title: `${quote.client_name} — ${quote.number}`, priority: 2, owner_id: S.me && S.me.id },
+    values: { title: `${quote.client_name} — ${quote.number}`, priority: 2,
+      owner_id: ((quote.lines || []).some((l) => l.category === "design") && (S.users.find((u) => u.name === DESIGN_OWNER_NAME) || {}).id) || (S.me && S.me.id) },
     fields: [
       { key: "title", label: "Título do trabalho" },
       { key: "priority", label: "Prioridade", type: "select", options: priorityOptions() },
@@ -328,11 +329,12 @@ async function showJob({ jobId, clientId }) {
   });
   if (!load.ok) return null;
   let { clients, catalog, job } = load.value;
-  let openNext = null;
+  let openNext = null, closeJob = null;
 
   return openModal({
     title: job ? job.reference : "Novo trabalho", wide: true,
     body: (close) => {
+      closeJob = close;
       const F = {};
       F.client = h("select", { disabled: !!job }, clients.map((c) => h("option", { value: c.id }, c.name)));
       F.client.value = String((job && job.client_id) || clientId || (clients[0] && clients[0].id) || "");
@@ -365,6 +367,12 @@ async function showJob({ jobId, clientId }) {
       F.pay.addEventListener("change", updatePay); F.paidAmt.addEventListener("input", updatePay);
       editor.el.addEventListener("input", updatePay); editor.el.addEventListener("click", () => setTimeout(updatePay, 0));
       setTimeout(updatePay, 0);
+      /* Linhas de design num trabalho novo → responsável por defeito: a Marina (se ainda ninguém mexeu no campo). */
+      let ownerTouched = !!job;
+      F.owner.addEventListener("change", () => { ownerTouched = true; });
+      const designOwner = S.users.find((u) => u.name === DESIGN_OWNER_NAME);
+      const syncOwner = () => { if (!ownerTouched && designOwner && editor.hasCategory("design")) F.owner.value = String(designOwner.id); };
+      editor.el.addEventListener("change", syncOwner); editor.el.addEventListener("click", () => setTimeout(syncOwner, 0));
 
       const head = h("div", { class: "dialog-title" });
       const origin = h("p", { class: "muted" });
@@ -407,7 +415,7 @@ async function showJob({ jobId, clientId }) {
       async function move(step) {
         const order = jobOrder(job), target = order[order.indexOf(job.status) + step];
         if (target === "Entregue" && !(await confirmDialog("Marcar como entregue", "Confirma que o trabalho já foi entregue ao cliente?", { yes: "Entregue" }))) return;
-        if (step > 0 && job.status === "Em design" && job.design_proof !== "Prova aprovada"
+        if (step > 0 && job.status === "Em criação" && job.design_proof !== "Prova aprovada"
           && !(await confirmDialog("Prova por aprovar", `A prova de design está «${job.design_proof}». Avançar mesmo assim?`, { yes: "Avançar", no: "Ainda não" }))) return;
         if (step > 0 && target === "Em produção" && job.phase === "impressao" && ["Por apresentar", "Apresentada ao cliente"].includes(job.print_proof)
           && !(await confirmDialog("Prova por aprovar", `A prova física está «${job.print_proof}». Passar a produção mesmo assim?`, { yes: "Passar a produção", no: "Ainda não" }))) return;
@@ -417,28 +425,70 @@ async function showJob({ jobId, clientId }) {
       function renderProof() {
         clear(proofBar); proofBar.hidden = true;
         if (!job) return;
-        const design = job.phase === "design" && ["Adjudicado", "Em design"].includes(job.status);
+        const design = job.phase === "design" && ["Adjudicado", "Em criação"].includes(job.status);
         const print = job.phase === "impressao" && job.status === "Adjudicado";
         if (!design && !print) return;
-        const states = design ? DESIGN_PROOFS : PRINT_PROOFS, cur = design ? job.design_proof : job.print_proof;
-        const sel = h("select", { onchange: async (e) => {
-          const v = e.target.value;
-          if (!(await run(() => (design ? API.setDesignProof(job.id, v) : API.setPrintProof(job.id, v)))).ok) { e.target.value = cur; return; }
+        const steps = design ? DESIGN_PROOFS : PRINT_PROOFS, cur = design ? job.design_proof : job.print_proof, i = steps.indexOf(cur);
+        const go = async (to) => {
+          if (!(await run(() => (design ? API.setDesignProof(job.id, to) : API.setPrintProof(job.id, to)))).ok) return;
           await reload();
-          if (v !== "Prova aprovada" && v !== "Aprovada") return;
-          if (design) await afterDesignApproved(); else await afterPrintApproved();
-        } }, states.map((x) => h("option", { value: x }, x)));
-        sel.value = cur;
+          if (to === "Prova aprovada") await afterDesignApproved(); else if (to === "Aprovada") await afterPrintApproved();
+        };
+        const dots = h("span", { class: "dots", title: steps.join(" → ") }, steps.map((_, k) => [
+          k ? h("b", { class: k <= i ? "done" : "" }) : null, h("i", { class: k === i ? "on" : k < i ? "done" : "" })]));
         proofBar.hidden = false;
-        proofBar.append(h("span", { class: "lab" }, design ? "Prova digital (ficheiro)" : "Prova física (impressa, para mostrar ao cliente)"), sel,
-          design ? h("span", { class: "muted small" }, hasPrint() ? "→ depois: impressão" : "só design") : null);
+        proofBar.append(h("span", { class: "lab" }, design ? "Prova digital (ficheiro)" : "Prova física (impressa, para mostrar ao cliente)"), dots, h("span", { class: "cur" }, cur),
+          h("span", { class: "spacer" }),
+          i > 0 ? btn(`← ${steps[i - 1]}`, () => go(steps[i - 1]), "sm") : null,
+          i < steps.length - 1 ? btn(`${steps[i + 1]} →`, () => go(steps[i + 1]), "primary sm")
+            : (design ? btn("Decidir impressão…", afterDesignApproved, "sm") : btn("Passar à produção…", afterPrintApproved, "sm")));
       }
+      /* Design aprovado: se não há impressão prevista, pergunta se vai ser impresso; se sim, abre a janela para acrescentar a impressão. */
       async function afterDesignApproved() {
-        if (hasPrint()) {
-          if (await confirmDialog("Prova aprovada", "A prova de design foi aprovada. Avançar para a fase de impressão?", { yes: "Sim, passar à impressão", no: "Ainda não" }))
-            await setStatus("Em produção");
-        } else if (await confirmDialog("Prova aprovada", "A prova foi aprovada e este trabalho é só de design. Marcar como completo?", { yes: "Sim, marcar como completo", no: "Ainda não" }))
-          await setStatus("Completo");
+        if (!hasPrint()) {
+          const a = await openModal({ title: "Design concluído", body: (close) => h("div", { class: "modal-body" },
+            h("p", {}, `A prova de «${job.title}» foi aprovada. Este trabalho vai ser impresso?`),
+            h("div", { class: "modal-foot" }, btn("Ainda não", () => close("later")), h("div", { class: "spacer" }),
+              btn("Não, concluir o trabalho", () => close("no")), btn("Sim, vai ser impresso", () => close("yes"), "primary"))) });
+          if (a === "no") { await setStatus("Completo"); return; }
+          if (a !== "yes") return;
+        }
+        await startPrintDialog();
+      }
+      async function startPrintDialog() {
+        const ed = linesEditor({ catalog, withCost: true, lines: [], defaultCat: "impressao" });
+        const owner = h("select", {}, S.users.map((u) => h("option", { value: u.id }, u.name)));
+        owner.value = String(job.owner_id ?? (S.me ? S.me.id : ""));
+        const start = h("select", {}, h("option", { value: "Em produção" }, "Em produção"), h("option", { value: "Adjudicado" }, "Adjudicado — falta a prova física"));
+        const err = h("p", { class: "danger form-error", hidden: true });
+        const res = await openModal({ title: "Passar à impressão", wide: true, body: (close) => h("div", { class: "modal-body" },
+          h("p", { class: "muted" }, hasPrint() ? "Este trabalho já tem linhas de impressão; pode acrescentar mais." : "Acrescente o que vai ser impresso. As linhas de design já feitas ficam no trabalho."),
+          ed.el,
+          h("div", { class: "form-grid two", style: { marginTop: "10px" } },
+            h("label", { class: "field" }, h("span", { class: "lab" }, "Responsável pela impressão"), owner),
+            h("label", { class: "field" }, h("span", { class: "lab" }, "Entra na impressão como"), start)),
+          err,
+          h("div", { class: "modal-foot" }, btn("Voltar", () => close(null)), h("div", { class: "spacer" }),
+            btn("Passar à impressão", () => {
+              err.hidden = true;
+              try {
+                const lines = ed.getLines();
+                if (!hasPrint() && !lines.some((l) => l.category === "impressao")) throw new Error("Acrescente pelo menos uma linha de impressão.");
+                close({ lines, owner: Number(owner.value), start: start.value });
+              } catch (e) { err.textContent = e.message; err.hidden = false; }
+            }, "primary"))) });
+        if (!res) return;
+        const r = await run(async () => {
+          if (res.lines.length) {
+            const data = { id: job.id, title: job.title, priority: job.priority, due_date: job.due_date, owner_id: job.owner_id, invoice_ref: job.invoice_ref,
+              paid: job.paid, paid_amount_cents: job.paid_amount_cents, notes: job.notes };
+            const items = [...job.items.map((i) => ({ description: i.description, specs: i.specs, quantity: Number(i.quantity), unit_price_cents: i.unit_price_cents,
+              unit_cost_cents: i.unit_cost_cents, vat_rate: Number(i.vat_rate), supplier_id: i.supplier_id, category: i.category })), ...res.lines];
+            await API.saveJob(data, items);
+          }
+          await API.startPrint(job.id, res.start, res.owner);
+        });
+        if (r.ok) { toast("Trabalho passou à impressão."); openNext = job.id; closeJob(job.id); }
       }
       async function afterPrintApproved() {
         if (await confirmDialog("Prova aprovada", "A prova física foi aprovada. Avançar para a produção?", { yes: "Sim, passar à produção", no: "Ainda não" }))
@@ -449,14 +499,14 @@ async function showJob({ jobId, clientId }) {
         const tasks = job.tasks || [];
         const rows = tasks.map((t) => ({
           onClick: async () => { if (await editTask(t)) reload(); },
-          cells: [{ t: t.title, b: true, c: t.status === "feito" ? "muted" : "" }, t.assignee_name || "—", priorityCell(t.priority),
+          cells: [{ t: t.title, b: true, c: t.status === "feito" ? "muted" : "" }, priorityCell(t.priority),
             t.status !== "feito" ? dueCell(t.due_date) : "—", pill(t.status),
             { node: btn(t.status === "feito" ? "Reabrir" : "Concluir", async () => {
               if ((await run(() => (t.status === "feito" ? API.reopenTask(t.id) : API.completeTask(t.id)))).ok) reload();
             }) }],
         }));
         return h("div", {}, h("div", { class: "toolbar" }, btn("+ Nova tarefa", async () => { if (await editTask(null, { job_id: job.id })) reload(); }, "primary")),
-          table(["Tarefa", "Responsável", "Prioridade", "Prazo", "Estado", ""], rows, { empty: "Sem tarefas neste trabalho." }));
+          table(["Tarefa", "Prioridade", "Prazo", "Estado", ""], rows, { empty: "Sem tarefas neste trabalho." }));
       }
       function renderTabs() {
         clear(tabsBar); clear(tabBody);
