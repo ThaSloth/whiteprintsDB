@@ -88,7 +88,7 @@ async function editRetainer(retainer, clientId) {
 async function editCatalogItem(item) {
   const vals = await formDialog({
     title: item ? "Editar item" : "Novo item", required: ["name"],
-    values: item || { category: "impressao", unit: "un", vat_rate: 23, unit_price_cents: 0, active: true },
+    values: item || { category: "impressao", unit: "un", vat_rate: 0, unit_price_cents: 0, active: true },
     validate: (v) => (v.vat_rate == null || v.vat_rate < 0 || v.vat_rate > 100 ? "O IVA tem de estar entre 0 e 100." : null),
     onDelete: item ? () => confirmDialog("Apagar item", `Apagar «${item.name}» do catálogo? Os orçamentos e trabalhos que já o usam não mudam.`, { yes: "Apagar", danger: true }) : null,
     fields: [
@@ -132,7 +132,7 @@ function linesEditor({ catalog, withCost, lines, readOnly, defaultCat }) {
       h("td", { class: "cat", "data-l": "Categoria" }, catSel(l.category || (l.catalog_item_id != null ? "outro" : (defaultCat || "")))),
       h("td", { class: "num sm", "data-l": "Qtd" }, inp("f-qty r", numText(l.quantity ?? 1), { inputMode: "decimal" })),
       h("td", { class: "num", "data-l": "Preço (€)" }, inp("f-price r", centsText(l.unit_price_cents || 0), { inputMode: "decimal" })),
-      h("td", { class: "num sm", "data-l": "IVA %" }, inp("f-vat r", numText(l.vat_rate ?? 23), { inputMode: "decimal" })),
+      h("td", { class: "num sm", "data-l": "IVA %" }, inp("f-vat r", numText(l.vat_rate ?? 0), { inputMode: "decimal" })),
       withCost ? h("td", { class: "num", "data-l": "Custo (€)" }, inp("f-cost r", centsText(l.unit_cost_cents || 0), { inputMode: "decimal" })) : null,
       h("td", { class: "x" }, h("button", { type: "button", class: "icon", title: "Remover linha", "aria-label": "Remover linha", disabled: locked, onclick: () => { tr.remove(); recalc(); } }, "×")));
     tr._catalogId = l.catalog_item_id ?? null;

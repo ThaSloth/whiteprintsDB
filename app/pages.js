@@ -40,14 +40,32 @@ async function pageToday(root) {
     j.due_date, () => openJob({ jobId: j.id }), { status: j.proof_state });
   const unpaid = a.unpaid_jobs || [];
   const unpaidTotal = unpaid.reduce((t, j) => t + (payInfo(j) ? payInfo(j).missing || 0 : 0), 0);
-  const unpaidRow = (j) => {
-    const pi = payInfo(j); if (!pi) return null;
-    return h("div", { class: "row-card", tabindex: 0, onclick: (e) => { if (!e.target.closest("button")) openJob({ jobId: j.id }); } },
-      h("div", { class: "grow" }, h("b", {}, `${j.reference} · ${j.title}`), h("div", { class: "muted" }, [j.client_name, pi.since >= 1 ? `completo há ${pi.since} dia(s)` : "completo hoje"].join(" · "))),
-      h("span", { class: pi.overdue ? "danger b" : "warn b" }, `${pi.overdue ? "Em atraso" : "Por cobrar"}${payText(pi)}`),
-      btn("Marcar como pago", async () => { if ((await run(() => API.markJobPaid(j.id))).ok) { toast("Marcado como pago."); refresh(); } }));
-  };
-  const unpaidRows = unpaid.map(unpaidRow).filter(Boolean);
+  // Por cobrar agrupado por cliente; ao clicar abre um pop-up com os trabalhos desse cliente.
+  const byClient = new Map();
+  for (const j of unpaid) {
+    const pi = payInfo(j); if (!pi) continue;
+    const k = j.client_id != null ? "c" + j.client_id : "n" + (j.client_name || "");
+    if (!byClient.has(k)) byClient.set(k, { name: j.client_name || "Sem cliente", jobs: [] });
+    byClient.get(k).jobs.push({ j, pi });
+  }
+  const groups = [...byClient.values()].map((g) => ({ ...g, total: g.jobs.reduce((t, x) => t + (x.pi.missing || 0), 0), late: g.jobs.some((x) => x.pi.overdue) }))
+    .sort((x, y) => (y.late - x.late) || (y.total - x.total));
+  const openUnpaid = (g) => openModal({ title: `${g.name} · por cobrar`, body: (close) => {
+    const rows = g.jobs.map(({ j, pi }) => h("div", { class: "row-card", tabindex: 0, onclick: (e) => { if (!e.target.closest("button")) { close(); openJob({ jobId: j.id }); } } },
+      h("div", { class: "grow" }, h("b", {}, `${j.reference} · ${j.title}`), h("div", { class: "muted" }, pi.since >= 1 ? `completo há ${pi.since} dia(s)` : "completo hoje")),
+      h("span", { class: pi.overdue ? "danger b" : "warn b" }, pi.overdue ? "Em atraso" : "Por cobrar"),
+      h("b", {}, pi.missing == null ? "" : eur(pi.missing)),
+      btn("Marcar como pago", async () => { if ((await run(() => API.markJobPaid(j.id))).ok) { toast("Marcado como pago."); close(); refresh(); } })));
+    return h("div", { class: "modal-body" }, h("p", { class: "muted" }, `${g.jobs.length} trabalho(s) completo(s) por cobrar · total `, h("b", {}, eur(g.total))), h("div", { class: "rows" }, rows),
+      h("div", { class: "modal-foot" }, btn("Fechar", () => close()), h("div", { class: "spacer" }),
+        g.jobs.length > 1 ? btn("Marcar todos como pagos", async () => {
+          for (const x of g.jobs) { if (!(await run(() => API.markJobPaid(x.j.id))).ok) break; }
+          toast("Marcado como pago."); close(); refresh();
+        }, "primary") : null));
+  } });
+  const unpaidRows = groups.map((g) => h("div", { class: "row-card", tabindex: 0, "data-client": g.name, onclick: () => openUnpaid(g) },
+    h("div", { class: "grow" }, h("b", {}, g.name), h("div", { class: "muted" }, `${g.jobs.length} trabalho${g.jobs.length === 1 ? "" : "s"}`)),
+    h("span", { class: g.late ? "danger b" : "warn b" }, g.late ? "Em atraso" : "Por cobrar"), h("b", {}, eur(g.total)), h("span", { class: "muted" }, "›")));
   const sections = [
     ["Agenda · próximos 7 dias", (a.events || []).map(evRow)],
     ["Provas", (a.proofs || []).map(proofRow)],
@@ -58,7 +76,7 @@ async function pageToday(root) {
   ].filter(([, rows]) => rows.length);
   root.append(h("h1", { class: "serif greet" }, `${hello}, ${S.me ? S.me.name : ""}`), h("p", { class: "muted" }, longDate(todayISO())),
     mindfulBox(), goalBox(a), compareStrip(a), kpis,
-    sections.length ? sections.map(([t, rows, money]) => h("section", {}, sectionLabel(money ? `${t}  ·  ${rows.length} trabalho(s)` : `${t}  ·  ${rows.length}`), h("div", { class: "rows" }, rows)))
+    sections.length ? sections.map(([t, rows, money]) => h("section", {}, sectionLabel(money ? `${t}  ·  ${rows.length} cliente(s)` : `${t}  ·  ${rows.length}`), h("div", { class: "rows" }, rows)))
       : emptyNote("Nada atrasado nem a vencer esta semana. Boa altura para adiantar trabalho."));
 }
 /* Faturado no mês (total com IVA dos trabalhos que passaram a Completo/Entregue) vs objetivo partilhado. */
