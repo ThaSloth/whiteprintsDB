@@ -417,7 +417,7 @@ async function showJob({ jobId, clientId }) {
         if (target === "Entregue" && !(await confirmDialog("Marcar como entregue", "Confirma que o trabalho já foi entregue ao cliente?", { yes: "Entregue" }))) return;
         if (step > 0 && job.status === "Em criação" && job.design_proof !== "Prova aprovada"
           && !(await confirmDialog("Prova por aprovar", `A prova de design está «${job.design_proof}». Avançar mesmo assim?`, { yes: "Avançar", no: "Ainda não" }))) return;
-        if (step > 0 && target === "Em produção" && job.phase === "impressao" && ["Por apresentar", "Apresentada ao cliente"].includes(job.print_proof)
+        if (step > 0 && target === "Em produção" && job.phase === "impressao" && ["Por iniciar", "Em produção", "Apresentada ao cliente"].includes(job.print_proof)
           && !(await confirmDialog("Prova por aprovar", `A prova física está «${job.print_proof}». Passar a produção mesmo assim?`, { yes: "Passar a produção", no: "Ainda não" }))) return;
         await setStatus(target);
       }
@@ -434,12 +434,20 @@ async function showJob({ jobId, clientId }) {
           await reload();
           if (to === "Prova aprovada") await afterDesignApproved(); else if (to === "Aprovada") await afterPrintApproved();
         };
-        const dots = h("span", { class: "dots", title: steps.join(" → ") }, steps.map((_, k) => [
-          k ? h("b", { class: k <= i ? "done" : "" }) : null, h("i", { class: k === i ? "on" : k < i ? "done" : "" })]));
+        const physOff = !design && i === 0;                    // prova física «Não precisa»: só o botão «Criar prova»
+        const shown = design ? steps : steps.slice(1), si = design ? i : i - 1;
+        const dots = h("span", { class: "dots", title: shown.join(" → ") }, shown.map((_, k) => [
+          k ? h("b", { class: k <= si ? "done" : "" }) : null, h("i", { class: k === si ? "on" : k < si ? "done" : "" })]));
         proofBar.hidden = false;
+        if (physOff) {
+          proofBar.append(h("span", { class: "lab" }, "Prova física (impressa, para mostrar ao cliente)"), h("span", { class: "cur muted" }, cur),
+            h("span", { class: "spacer" }), btn("Criar prova", () => go("Por iniciar"), "primary sm"));
+          return;
+        }
         proofBar.append(h("span", { class: "lab" }, design ? "Prova digital (ficheiro)" : "Prova física (impressa, para mostrar ao cliente)"), dots, h("span", { class: "cur" }, cur),
           h("span", { class: "spacer" }),
-          i > 0 ? btn(`← ${steps[i - 1]}`, () => go(steps[i - 1]), "sm") : null,
+          !design && i === 1 ? h("button", { type: "button", class: "btn sm", title: "Voltar a «Não precisa»", "aria-label": "Voltar a «Não precisa»", onclick: () => go("Não precisa") }, "✕")
+            : i > 0 ? btn(`← ${steps[i - 1]}`, () => go(steps[i - 1]), "sm") : null,
           i < steps.length - 1 ? btn(`${steps[i + 1]} →`, () => go(steps[i + 1]), "primary sm")
             : (design ? btn("Decidir impressão…", afterDesignApproved, "sm") : btn("Passar à produção…", afterPrintApproved, "sm")));
       }

@@ -11,7 +11,7 @@ const ITEM_CATS = ["design", "impressao", "mao de obra", "outro"];
 const DESIGN_PROOFS = ["Por começar", "Em criação", "Prova enviada", "Prova aprovada"];
 /* Quem fica por defeito com os trabalhos que têm design. */
 const DESIGN_OWNER_NAME = "Marina";
-const PRINT_PROOFS = ["Não precisa", "Por apresentar", "Apresentada ao cliente", "Aprovada"];
+const PRINT_PROOFS = ["Não precisa", "Por iniciar", "Em produção", "Apresentada ao cliente", "Aprovada"];
 /* Categoria do catálogo → categoria da linha. */
 function itemCatOf(catalogCategory) {
   if (catalogCategory === "design") return "design";
