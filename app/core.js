@@ -5,7 +5,26 @@
    ============================================================================= */
 
 /* ---------- listas e nomes ---------- */
-const JOB_STATUSES = ["Em orçamento", "Adjudicado", "Em produção", "Completo", "Entregue"];
+const JOB_STATUSES = ["Em orçamento", "Adjudicado", "Em design", "Em produção", "Completo", "Entregue"];
+/* Categoria de cada linha (item) de um trabalho ou orçamento: decide em que secção o trabalho aparece. */
+const ITEM_CATS = ["design", "impressao", "mao de obra", "outro"];
+const DESIGN_PROOFS = ["Por começar", "Em design", "Prova enviada", "Prova aprovada"];
+const PRINT_PROOFS = ["Não precisa", "Por apresentar", "Apresentada ao cliente", "Aprovada"];
+/* Categoria do catálogo → categoria da linha. */
+function itemCatOf(catalogCategory) {
+  if (catalogCategory === "design") return "design";
+  if (["impressao", "vinil de recorte", "textil dtf"].includes(catalogCategory)) return "impressao";
+  if (catalogCategory === "mao de obra") return "mao de obra";
+  return "outro";
+}
+/* Sequência de estados de um trabalho (igual à da base de dados). */
+function jobOrder(job) {
+  if (job.phase === "design" || job.status === "Em design")
+    return job.has_print === false || (job.items && !job.items.some((i) => i.category === "impressao"))
+      ? ["Em orçamento", "Adjudicado", "Em design", "Completo", "Entregue"]
+      : ["Em orçamento", "Adjudicado", "Em design", "Em produção", "Completo", "Entregue"];
+  return ["Em orçamento", "Adjudicado", "Em produção", "Completo", "Entregue"];
+}
 const CLIENT_SOURCES = ["formulario", "email", "whatsapp", "telefone", "recomendacao", "redes sociais", "presencial", "outro"];
 const CLIENT_STATUSES = ["lead", "ativo", "recorrente", "inativo"];
 const CATEGORIES = ["impressao", "vinil de recorte", "textil dtf", "redes sociais", "foto e video", "design", "mao de obra", "outro"];
@@ -20,7 +39,7 @@ const LABELS = {
   formulario: "Formulário do site", email: "E-mail", whatsapp: "WhatsApp", telefone: "Telefone", recomendacao: "Recomendação",
   "redes sociais": "Redes sociais", presencial: "Presencial", outro: "Outro",
   lead: "Lead", ativo: "Ativo", recorrente: "Recorrente", inativo: "Inativo",
-  impressao: "Impressão", "vinil de recorte": "Vinil de Recorte", "textil dtf": "Têxtil DTF", "foto e video": "Foto e vídeo", design: "Design", "mao de obra": "Mão de Obra", "orçamento": "Orçamento",
+  outros: "Outros", impressao: "Impressão", "vinil de recorte": "Vinil de Recorte", "textil dtf": "Têxtil DTF", "foto e video": "Foto e vídeo", design: "Design", "mao de obra": "Mão de Obra", "orçamento": "Orçamento",
   rascunho: "Rascunho", enviado: "Enviado", aceite: "Aceite", recusado: "Recusado",
   "por fazer": "Por fazer", "em curso": "Em curso", feito: "Feito",
   ativa: "Ativa", pausada: "Pausada", terminada: "Terminada",
@@ -32,7 +51,7 @@ const label = (v) => (v == null || v === "" ? "—" : LABELS[v] || v);
 const opts = (values) => values.map((v) => ({ label: label(v), value: v }));
 
 const STATUS_COLORS = {
-  "Em orçamento": ["#efede7", "#5b5851"], Adjudicado: ["#e3eaf4", "#2d4b78"], "Em produção": ["#f7ebd0", "#85570b"],
+  "Em orçamento": ["#efede7", "#5b5851"], Adjudicado: ["#e3eaf4", "#2d4b78"], "Em design": ["#ebe4f3", "#5a3d80"], "Em produção": ["#f7ebd0", "#85570b"],
   Completo: ["#dbeee3", "#24604a"], Entregue: ["#e6e4df", "#3d3b36"],
   rascunho: ["#efede7", "#5b5851"], enviado: ["#e3eaf4", "#2d4b78"], aceite: ["#dbeee3", "#24604a"], recusado: ["#f3dedb", "#8f2d1f"],
   reuniao: ["#e3eaf4", "#2d4b78"], instalacao: ["#f7ebd0", "#85570b"], visita: ["#dbeee3", "#24604a"], entrega: ["#e6e4df", "#3d3b36"],
@@ -237,11 +256,11 @@ function openModal({ title, wide, body, onClose }) {
     if (first && !dlg.querySelector("[autofocus]")) first.focus();
   });
 }
-async function confirmDialog(title, message, { yes = "Confirmar", danger = false } = {}) {
+async function confirmDialog(title, message, { yes = "Confirmar", no = "Cancelar", danger = false } = {}) {
   const r = await openModal({
     title, body: (close) => h("div", { class: "modal-body" }, h("p", {}, message),
       h("div", { class: "modal-foot" }, h("div", { class: "spacer" }),
-        btn("Cancelar", () => close(false)), h("button", { type: "button", class: "btn " + (danger ? "danger-solid" : "primary"), autofocus: true, onclick: () => close(true) }, yes))),
+        btn(no, () => close(false)), h("button", { type: "button", class: "btn " + (danger ? "danger-solid" : "primary"), autofocus: true, onclick: () => close(true) }, yes))),
   });
   return r === true;
 }
@@ -411,9 +430,12 @@ const API = {
   tapes: () => rpc("wp_list_tapes"),
   calcSettings: () => rpc("wp_get_calc"),
   saveCalcSettings: (data) => rpc("wp_save_calc", { p_data: data }),
-  setGoal: (cents) => rpc("wp_set_goal", { p_cents: cents }),
+  setGoal: (cents, month) => rpc("wp_set_goal", { p_cents: cents, p_month: month || null, p_today: todayISO() }),
+  setDesignProof: (id, st) => rpc("wp_set_design_proof", { p_id: id, p_state: st }),
+  setPrintProof: (id, st) => rpc("wp_set_print_proof", { p_id: id, p_state: st }),
+  monthReport: (month) => rpc("wp_month_report", { p_month: month, p_today: todayISO() }),
   acceptQuote: (id, v) => rpc("wp_accept_quote", {
-    p_id: id, p_title: v.title, p_category: v.category, p_due: v.due_date, p_owner: v.owner_id, p_priority: v.priority, p_today: todayISO(),
+    p_id: id, p_title: v.title, p_category: null, p_due: v.due_date, p_owner: v.owner_id, p_priority: v.priority, p_today: todayISO(),
   }),
   saveJob: (data, items) => rpc("wp_save_job", { p_data: data, p_items: items, p_today: todayISO() }),
   setJobStatus: (id, st) => rpc("wp_set_job_status", { p_id: id, p_status: st, p_today: todayISO() }),

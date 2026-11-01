@@ -110,15 +110,26 @@ function linesEditor({ catalog, withCost, lines, readOnly }) {
   const totalsEl = h("div", { class: "totals" });
   const sel = h("select", { class: "catalog-select" }, catalog.map((c) =>
     h("option", { value: c.id }, c.name + (c.unit_price_cents ? " — " + eur(c.unit_price_cents) : ""))));
-  const headers = ["Descrição", "Especificações", "Qtd", "Preço unit. (€)", "IVA %"].concat(withCost ? ["Custo unit. (€)"] : []);
+  const headers = ["Descrição", "Especificações", "Categoria", "Qtd", "Preço unit. (€)", "IVA %"].concat(withCost ? ["Custo unit. (€)"] : []);
   let locked = !!readOnly;
 
   const inp = (cls, value, extra) => h("input", { class: cls, type: "text", value, autocomplete: "off", disabled: locked, oninput: recalc, ...(extra || {}) });
+  /* Categoria da linha: vem do catálogo; nas linhas livres escolhe-se à mão (fica destacada até escolher). */
+  const catSel = (value, catalogLine) => {
+    const s = h("select", { class: "f-cat", disabled: locked, "aria-label": "Categoria da linha" },
+      h("option", { value: "" }, "— escolher"), ITEM_CATS.map((c) => h("option", { value: c }, label(c))));
+    s.value = value || "";
+    const mark = () => s.classList.toggle("need", !s.value && !locked);
+    s.addEventListener("change", () => { mark(); recalc(); });
+    s._mark = mark; mark();
+    return s;
+  };
   function addLine(line, focus) {
     const l = line || {};
     const tr = h("tr", {},
       h("td", {}, inp("f-desc", l.description || "", { placeholder: "Descrição" })),
       h("td", {}, inp("f-specs", l.specs || "", { placeholder: "Especificações" })),
+      h("td", { class: "cat", "data-l": "Categoria" }, catSel(l.category || (l.catalog_item_id != null ? "outro" : ""))),
       h("td", { class: "num sm", "data-l": "Qtd" }, inp("f-qty r", numText(l.quantity ?? 1), { inputMode: "decimal" })),
       h("td", { class: "num", "data-l": "Preço (€)" }, inp("f-price r", centsText(l.unit_price_cents || 0), { inputMode: "decimal" })),
       h("td", { class: "num sm", "data-l": "IVA %" }, inp("f-vat r", numText(l.vat_rate ?? 23), { inputMode: "decimal" })),
@@ -130,7 +141,7 @@ function linesEditor({ catalog, withCost, lines, readOnly }) {
     recalc();
     if (focus) tr.querySelector(".f-desc").focus();
   }
-  function read() {
+  function read(strict) {
     const out = [];
     [...tbody.children].forEach((tr, i) => {
       const v = (c) => tr.querySelector(c).value.trim();
@@ -142,10 +153,12 @@ function linesEditor({ catalog, withCost, lines, readOnly }) {
         const line = {
           description: desc, specs: v(".f-specs") || null, quantity: parseNumber(v(".f-qty") || "1"),
           unit_price_cents: parseEur(v(".f-price")), vat_rate: parseNumber(v(".f-vat") || "0"), catalog_item_id: tr._catalogId,
+          category: tr.querySelector(".f-cat").value,
         };
         if (withCost) { line.unit_cost_cents = parseEur(v(".f-cost")); line.supplier_id = tr._supplierId ?? null; }
         out.push(line);
       } catch { throw new Error(`Linha ${i + 1}: confirme a quantidade, os preços e o IVA.`); }
+      if (strict && !out[out.length - 1].category) throw new Error(`Linha ${i + 1}: escolha a categoria (Design, Impressão, Mão de obra ou Outro).`);
     });
     return out;
   }
@@ -162,22 +175,23 @@ function linesEditor({ catalog, withCost, lines, readOnly }) {
     locked = v;
     el.classList.toggle("locked", v);
     el.querySelectorAll("input,select,button.icon,.bar .btn").forEach((n) => { n.disabled = v; });
+    el.querySelectorAll(".f-cat").forEach((n) => n._mark && n._mark());
   }
   const bar = h("div", { class: "bar" },
     catalog.length ? sel : null,
     catalog.length ? btn("+ Do catálogo", () => {
       const c = catalog.find((x) => String(x.id) === sel.value);
-      if (c) addLine({ description: c.name, quantity: 1, unit_price_cents: c.unit_price_cents, vat_rate: c.vat_rate, catalog_item_id: c.id });
+      if (c) addLine({ description: c.name, quantity: 1, unit_price_cents: c.unit_price_cents, vat_rate: c.vat_rate, catalog_item_id: c.id, category: itemCatOf(c.category) });
     }) : null,
     btn("+ Linha livre", () => addLine(null, true)));
   const el = h("div", { class: "lines" }, bar,
     h("div", { class: "table-wrap" }, h("table", { class: "data lines-table" },
-      h("thead", {}, h("tr", {}, headers.map((x, i) => h("th", { class: i >= 2 ? "r" : "" }, x)), h("th", {}))), tbody)),
+      h("thead", {}, h("tr", {}, headers.map((x, i) => h("th", { class: i >= 3 ? "r" : "" }, x)), h("th", {}))), tbody)),
     totalsEl);
   (lines || []).forEach((l) => addLine(l));
   if (!(lines || []).length) recalc();
   if (locked) setLocked(true);
-  return { el, getLines: read, setLocked };
+  return { el, getLines: () => read(true), setLocked };
 }
 
 /* ---------- ficheiros (no armazenamento privado do Supabase) ---------- */
@@ -275,10 +289,10 @@ function filesPanel({ client, jobId, quote }) {
 async function acceptQuoteDialog(quote) {
   return formDialog({
     title: `Aceitar ${quote.number}`, ok: "Criar trabalho", required: ["title"],
-    intro: "O orçamento passa a «Aceite» e é criado um trabalho «Adjudicado» com as mesmas linhas.",
-    values: { title: `${quote.client_name} — ${quote.number}`, category: "impressao", priority: 2, owner_id: S.me && S.me.id },
+    intro: "O orçamento passa a «Aceite» e é criado um trabalho «Adjudicado» com as mesmas linhas. A secção (Design, Impressão ou Outros) vem da categoria das linhas.",
+    values: { title: `${quote.client_name} — ${quote.number}`, priority: 2, owner_id: S.me && S.me.id },
     fields: [
-      { key: "title", label: "Título do trabalho" }, { key: "category", label: "Categoria", type: "select", options: opts(CATEGORIES) },
+      { key: "title", label: "Título do trabalho" },
       { key: "priority", label: "Prioridade", type: "select", options: priorityOptions() },
       { key: "due_date", label: "Prazo de entrega", type: "date" },
       { key: "owner_id", label: "Responsável", type: "select", none: "—", options: userOptions() },
@@ -323,8 +337,6 @@ async function showJob({ jobId, clientId }) {
       F.client = h("select", { disabled: !!job }, clients.map((c) => h("option", { value: c.id }, c.name)));
       F.client.value = String((job && job.client_id) || clientId || (clients[0] && clients[0].id) || "");
       F.title = h("input", { type: "text", value: job ? job.title : "", autocomplete: "off" });
-      F.category = h("select", {}, CATEGORIES.map((c) => h("option", { value: c }, label(c))));
-      F.category.value = job ? job.category : "outro";
       F.priority = h("select", {}, Object.entries(PRIORITIES).map(([k, v]) => h("option", { value: k }, v)));
       F.priority.value = String(job ? job.priority : 2);
       F.due = h("input", { type: "date", value: (job && job.due_date) || "" });
@@ -357,6 +369,7 @@ async function showJob({ jobId, clientId }) {
       const head = h("div", { class: "dialog-title" });
       const origin = h("p", { class: "muted" });
       const banner = h("div", { class: "pay-banner", hidden: true });
+      const proofBar = h("div", { class: "proof-bar", hidden: true });
       const tabsBar = h("div", { class: "tabs" });
       const tabBody = h("div", { class: "tab-body" });
       let tab = "itens", filesP = null;
@@ -364,10 +377,11 @@ async function showJob({ jobId, clientId }) {
       function renderHead() {
         clear(head); clear(origin);
         if (!job) { head.append(h("h2", { class: "serif" }, "Novo trabalho")); return; }
-        const i = JOB_STATUSES.indexOf(job.status);
-        head.append(h("h2", { class: "serif" }, job.reference), pill(job.status), h("div", { class: "spacer" }),
-          i > 0 ? btn(`← ${JOB_STATUSES[i - 1]}`, () => move(-1)) : null,
-          i < JOB_STATUSES.length - 1 ? btn(`${JOB_STATUSES[i + 1]} →`, () => move(1), "primary") : null);
+        const order = jobOrder(job), i = order.indexOf(job.status);
+        head.append(h("h2", { class: "serif" }, job.reference), pill(job.status), h("span", { class: "phase-tag" }, label(job.phase)), h("div", { class: "spacer" }),
+          i > 0 ? btn(`← ${order[i - 1]}`, () => move(-1)) : null,
+          i < order.length - 1 ? btn(`${order[i + 1]} →`, () => move(1), "primary") : null);
+        renderProof();
         const bits = [];
         if (job.quote_number) bits.push(`Veio do orçamento ${job.quote_number}`);
         if (job.repeat_ref) bits.push(`Repete o trabalho ${job.repeat_ref}`);
@@ -388,10 +402,47 @@ async function showJob({ jobId, clientId }) {
         const r = await run(() => API.job(job.id));
         if (r.ok) { job = r.value; renderHead(); renderTabs(); }
       }
+      const hasPrint = () => (job.items || []).some((i) => i.category === "impressao");
+      async function setStatus(target) { if ((await run(() => API.setJobStatus(job.id, target))).ok) { await reload(); return true; } return false; }
       async function move(step) {
-        const target = JOB_STATUSES[JOB_STATUSES.indexOf(job.status) + step];
+        const order = jobOrder(job), target = order[order.indexOf(job.status) + step];
         if (target === "Entregue" && !(await confirmDialog("Marcar como entregue", "Confirma que o trabalho já foi entregue ao cliente?", { yes: "Entregue" }))) return;
-        if ((await run(() => API.setJobStatus(job.id, target))).ok) reload();
+        if (step > 0 && job.status === "Em design" && job.design_proof !== "Prova aprovada"
+          && !(await confirmDialog("Prova por aprovar", `A prova de design está «${job.design_proof}». Avançar mesmo assim?`, { yes: "Avançar", no: "Ainda não" }))) return;
+        if (step > 0 && target === "Em produção" && job.phase === "impressao" && ["Por apresentar", "Apresentada ao cliente"].includes(job.print_proof)
+          && !(await confirmDialog("Prova por aprovar", `A prova física está «${job.print_proof}». Passar a produção mesmo assim?`, { yes: "Passar a produção", no: "Ainda não" }))) return;
+        await setStatus(target);
+      }
+      /* Barra da prova: digital na fase de design, física no início da impressão (enquanto «Adjudicado»). */
+      function renderProof() {
+        clear(proofBar); proofBar.hidden = true;
+        if (!job) return;
+        const design = job.phase === "design" && ["Adjudicado", "Em design"].includes(job.status);
+        const print = job.phase === "impressao" && job.status === "Adjudicado";
+        if (!design && !print) return;
+        const states = design ? DESIGN_PROOFS : PRINT_PROOFS, cur = design ? job.design_proof : job.print_proof;
+        const sel = h("select", { onchange: async (e) => {
+          const v = e.target.value;
+          if (!(await run(() => (design ? API.setDesignProof(job.id, v) : API.setPrintProof(job.id, v)))).ok) { e.target.value = cur; return; }
+          await reload();
+          if (v !== "Prova aprovada" && v !== "Aprovada") return;
+          if (design) await afterDesignApproved(); else await afterPrintApproved();
+        } }, states.map((x) => h("option", { value: x }, x)));
+        sel.value = cur;
+        proofBar.hidden = false;
+        proofBar.append(h("span", { class: "lab" }, design ? "Prova digital (ficheiro)" : "Prova física (impressa, para mostrar ao cliente)"), sel,
+          design ? h("span", { class: "muted small" }, hasPrint() ? "→ depois: impressão" : "só design") : null);
+      }
+      async function afterDesignApproved() {
+        if (hasPrint()) {
+          if (await confirmDialog("Prova aprovada", "A prova de design foi aprovada. Avançar para a fase de impressão?", { yes: "Sim, passar à impressão", no: "Ainda não" }))
+            await setStatus("Em produção");
+        } else if (await confirmDialog("Prova aprovada", "A prova foi aprovada e este trabalho é só de design. Marcar como completo?", { yes: "Sim, marcar como completo", no: "Ainda não" }))
+          await setStatus("Completo");
+      }
+      async function afterPrintApproved() {
+        if (await confirmDialog("Prova aprovada", "A prova física foi aprovada. Avançar para a produção?", { yes: "Sim, passar à produção", no: "Ainda não" }))
+          await setStatus("Em produção");
       }
 
       function tasksView() {
@@ -435,7 +486,7 @@ async function showJob({ jobId, clientId }) {
           if (g != null && paidAmount >= g && g > 0) return problem("O valor já pago cobre o total do trabalho: escolha «Pago».");
         }
         const data = {
-          title, category: F.category.value, priority: Number(F.priority.value), due_date: F.due.value || null,
+          title, priority: Number(F.priority.value), due_date: F.due.value || null,
           owner_id: F.owner.value ? Number(F.owner.value) : null, invoice_ref: F.invoice.value.trim() || null,
           paid: F.pay.value === "pago", paid_amount_cents: paidAmount, notes: F.notes.value.trim() || null,
         };
@@ -447,7 +498,6 @@ async function showJob({ jobId, clientId }) {
         h("div", { class: "form-grid" },
           h("label", { class: "field" }, h("span", { class: "lab" }, "Cliente *"), F.client),
           h("label", { class: "field" }, h("span", { class: "lab" }, "Título *"), F.title),
-          h("label", { class: "field" }, h("span", { class: "lab" }, "Categoria"), F.category),
           h("label", { class: "field" }, h("span", { class: "lab" }, "Responsável"), F.owner)),
         h("div", { class: "form-grid" },
           h("label", { class: "field" }, h("span", { class: "lab" }, "Prioridade"), F.priority),
@@ -455,7 +505,7 @@ async function showJob({ jobId, clientId }) {
           h("label", { class: "field" }, h("span", { class: "lab" }, "Fatura"), F.invoice),
           h("label", { class: "field" }, h("span", { class: "lab" }, "Pagamento"), F.pay, F.paidAmt, payNote)));
       renderHead(); renderTabs();
-      return h("div", { class: "modal-body" }, head, origin, banner, grid,
+      return h("div", { class: "modal-body" }, head, origin, proofBar, banner, grid,
         h("label", { class: "field block" }, h("span", { class: "lab" }, "Notas"), F.notes),
         tabsBar, tabBody, err,
         h("div", { class: "modal-foot" },

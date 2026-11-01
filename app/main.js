@@ -4,7 +4,7 @@
    ============================================================================= */
 
 const app = document.getElementById("app");
-const NAV = [["hoje", "Hoje"], ["agenda", "Agenda"], ["clientes", "Clientes"], ["trabalhos", "Trabalhos"], ["orcamentos", "Orçamentos"], ["tarefas", "Tarefas"], ["avencas", "Avenças"], ["catalogo", "Catálogo"], ["calculadora", "Calculadora"]];
+const NAV = [["hoje", "Hoje"], ["agenda", "Agenda"], ["clientes", "Clientes"], ["trabalhos", "Trabalhos"], ["orcamentos", "Orçamentos"], ["tarefas", "Tarefas"], ["avencas", "Avenças"], ["relatorio", "Relatório"], ["catalogo", "Catálogo"], ["calculadora", "Calculadora"]];
 const storeGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const storeSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* sem armazenamento */ } };
 const logoImg = (white) => h("img", { src: white ? "assets/logo-white.svg" : "assets/logo.svg", alt: "whiteprints", class: "logo" });
@@ -110,12 +110,12 @@ function showApp() {
 
 function parseRoute() {
   const parts = location.hash.replace(/^#\/?/, "").split("/");
-  return { page: parts[0] || "hoje", id: parts[1] ? Number(parts[1]) : null };
+  return { page: parts[0] || "hoje", id: parts[1] ? Number(parts[1]) : null, arg: parts[1] || null };
 }
 window.renderPage = async function renderPage() {
   const view = document.getElementById("view");
   if (!view || !S.me) return;
-  const { page, id } = parseRoute();
+  const { page, id, arg } = parseRoute();
   const token = ++renderToken;
   document.querySelectorAll(".nav-links a").forEach((a) => a.classList.toggle("on", a.dataset.k === page));
   const scroll = view.scrollTop;
@@ -128,6 +128,7 @@ window.renderPage = async function renderPage() {
     else if (page === "orcamentos") await pageQuotes(fresh);
     else if (page === "tarefas") await pageTasks(fresh);
     else if (page === "avencas") await pageRetainers(fresh);
+    else if (page === "relatorio") await pageReport(fresh, arg);
     else if (page === "catalogo") await pageCatalog(fresh);
     else if (page === "calculadora") await pageCalc(fresh);
     else await pageToday(fresh);

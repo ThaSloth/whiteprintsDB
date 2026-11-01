@@ -36,6 +36,8 @@ async function pageToday(root) {
   const shown = new Set([...a.overdue_tasks, ...a.due_tasks].map((t) => t.id));
   const evRow = (ev) => rowCard(`${ev.start_time ? fmtTime(ev.start_time) + " · " : ""}${ev.title}`, eventSubtitle(ev), ev.start_on < todayISO() ? todayISO() : ev.start_on,
     async () => { if (await editEvent(ev)) refresh(); }, { status: ev.kind });
+  const proofRow = (j) => rowCard(`${j.reference} · ${j.title}`, [j.client_name, j.proof_kind === "design" ? "Prova digital (design)" : "Prova física (impressão)"].join(" · "),
+    j.due_date, () => openJob({ jobId: j.id }), { status: j.proof_state });
   const unpaid = a.unpaid_jobs || [];
   const unpaidTotal = unpaid.reduce((t, j) => t + (payInfo(j) ? payInfo(j).missing || 0 : 0), 0);
   const unpaidRow = (j) => {
@@ -48,13 +50,14 @@ async function pageToday(root) {
   const unpaidRows = unpaid.map(unpaidRow).filter(Boolean);
   const sections = [
     ["Agenda · próximos 7 dias", (a.events || []).map(evRow)],
+    ["Provas", (a.proofs || []).map(proofRow)],
     ["Atrasado", [...a.overdue_jobs.map(jobRow), ...a.overdue_tasks.map(taskRow)]],
     [`Por cobrar${unpaidTotal ? " · " + eur(unpaidTotal) : ""}`, unpaidRows, true],
     ["Próximos 7 dias", [...a.due_jobs.map(jobRow), ...a.due_tasks.map(taskRow)]],
     ["As minhas tarefas", a.mine.filter((t) => !shown.has(t.id)).slice(0, 10).map(taskRow)],
   ].filter(([, rows]) => rows.length);
   root.append(h("h1", { class: "serif greet" }, `${hello}, ${S.me ? S.me.name : ""}`), h("p", { class: "muted" }, longDate(todayISO())),
-    mindfulBox(), goalBox(a), kpis,
+    mindfulBox(), goalBox(a), compareStrip(a), kpis,
     sections.length ? sections.map(([t, rows, money]) => h("section", {}, sectionLabel(money ? `${t}  ·  ${rows.length} trabalho(s)` : `${t}  ·  ${rows.length}`), h("div", { class: "rows" }, rows)))
       : emptyNote("Nada atrasado nem a vencer esta semana. Boa altura para adiantar trabalho."));
 }
@@ -72,10 +75,10 @@ function goalBox(a) {
   const edit = async () => {
     const vals = await formDialog({
       title: "Objetivo mensal de faturação", values: { goal: goal / 100 }, ok: "Guardar", required: ["goal"],
-      intro: "Valor a faturar por mês (com IVA). É o mesmo para os dois.", fields: [{ key: "goal", label: "Objetivo (€)", type: "number", dec: 2 }],
+      intro: "Valor a faturar neste mês (com IVA). É o mesmo para os dois. Os meses seguintes herdam este valor e os anteriores mantêm o que tinham.", fields: [{ key: "goal", label: "Objetivo (€)", type: "number", dec: 2 }],
       validate: (v) => (typeof v.goal === "number" && v.goal >= 0 ? null : "Indique um valor válido."),
     });
-    if (vals && (await run(() => API.setGoal(Math.round(vals.goal * 100)))).ok) { toast("Objetivo guardado."); refresh(); }
+    if (vals && (await run(() => API.setGoal(Math.round(vals.goal * 100), todayISO().slice(0, 8) + "01"))).ok) { toast("Objetivo guardado."); refresh(); }
   };
   const tile = (lab, num, sub, cls) => h("div", { class: "t" }, h("span", { class: "lab2" }, lab), h("span", { class: "n serif " + (cls || "") }, num), sub);
   return h("div", { class: "goal" },
@@ -84,6 +87,25 @@ function goalBox(a) {
     tile("Objetivo", eur(goal), h("button", { type: "button", class: "linklike", onclick: edit }, "Editar")),
     reached ? tile("Excedido", "+" + eur(billed - goal), h("span", { class: "muted small" }, "objetivo atingido"), "ok")
       : tile("Falta", eur(missing), h("span", { class: "muted small" }, daysLeft === 0 ? "último dia do mês" : `${daysLeft} dia${daysLeft === 1 ? "" : "s"} até ao fim do mês`)));
+}
+/* Faixa discreta por baixo do objetivo: mês anterior (faturado, objetivo, o que faltou) e comparação com o mesmo dia. */
+function compareStrip(a) {
+  if (a.prev_month == null) return null;
+  const [py, pm] = a.prev_month.split("-").map(Number), pname = MONTHS[pm - 1];
+  const prevBilled = Number(a.prev_billed_cents || 0), prevGoal = Number(a.prev_goal_cents || 0);
+  const same = Number(a.prev_billed_same_day_cents || 0), now = Number(a.month_billed_cents || 0);
+  const day = Number(todayISO().slice(8, 10)), diff = now - same;
+  const miss = Math.max(0, prevGoal - prevBilled);
+  const cmp = prevBilled === 0 && now === 0 ? null
+    : h("span", {}, `Hoje vs dia ${day} de ${pname}: `, h("b", { class: diff > 0 ? "ok" : diff < 0 ? "danger" : "" }, diff === 0 ? "igual" : `${diff > 0 ? "▲ +" : "▼ −"}${eur(Math.abs(diff))}`));
+  void py;
+  return h("div", { class: "strip" },
+    h("span", {}, h("b", {}, pname.charAt(0).toUpperCase() + pname.slice(1))),
+    h("span", {}, "Faturado ", h("b", {}, eur(prevBilled))),
+    cmp,
+    h("span", {}, "Objetivo ", h("b", {}, eur(prevGoal))),
+    h("span", {}, miss > 0 ? ["Ficou a faltar ", h("b", {}, eur(miss))] : h("b", { class: "ok" }, "Objetivo atingido")),
+    h("a", { href: `#/relatorio/${a.prev_month.slice(0, 7)}` }, "Ver relatório mensal →"));
 }
 function mindfulBox() {
   const m = momentoDoDia(), icon = h("span", { class: "mf-icon", title: m.nome });
@@ -181,6 +203,13 @@ async function pageClient(root, id) {
 }
 
 /* ---------- Trabalhos ---------- */
+const PHASE_SECTIONS = [["design", "Design"], ["impressao", "Impressão"], ["outros", "Outros"]];
+/* Prova pendente de um trabalho (digital no design, física no início da impressão). */
+function proofCell(j) {
+  if (j.phase === "design" && ["Adjudicado", "Em design"].includes(j.status)) return j.design_proof === "Por começar" ? { t: "—", c: "muted" } : pill(j.design_proof);
+  if (j.phase === "impressao" && j.status === "Adjudicado" && j.print_proof !== "Não precisa") return pill(j.print_proof);
+  return { t: "—", c: "muted" };
+}
 async function pageJobs(root) {
   if (F.pendingJobStatus) { F.jobs.status = F.pendingJobStatus; F.pendingJobStatus = null; }
   const jobs = await API.jobs();
@@ -189,10 +218,23 @@ async function pageJobs(root) {
     const f = F.jobs;
     const shown = jobs.filter((j) => (f.status === "all" || (f.status === "open" && j.status !== "Entregue") || j.status === f.status)
       && (!f.owner || String(j.owner_id) === f.owner) && matches(f.q, j.title, j.client_name, j.reference));
-    clear(host).append(table(["Ref.", "Trabalho", "Cliente", "Estado", "Prioridade", "Prazo", "Responsável", "Pagamento", { t: "Valor s/ IVA", r: true }], shown.map((j) => ({
+    clear(host);
+    const head = ["Ref.", "Trabalho", "Cliente", "Estado", "Prova", "Prioridade", "Prazo", "Responsável", "Pagamento", { t: "Valor s/ IVA", r: true }];
+    const rowOf = (j) => ({
       onClick: () => openJob({ jobId: j.id }),
-      cells: [j.reference, { t: j.title, b: true }, j.client_name, pill(j.status), priorityCell(j.priority), dueCell(j.due_date, j.delivered_on, j.status === "Entregue"), j.owner_name || "—", payLabel(j), moneyCell(j.net_cents)],
-    })), { empty: jobs.length ? "Nenhum trabalho com estes filtros." : "Ainda não há trabalhos. Crie um com «+ Novo trabalho»." }));
+      cells: [j.reference, { node: h("span", {}, h("b", {}, j.title), j.phase === "design" ? h("div", { class: "muted small" }, j.has_print ? "→ depois: impressão" : "só design") : null) },
+        j.client_name, pill(j.status), proofCell(j), priorityCell(j.priority), dueCell(j.due_date, j.delivered_on, j.status === "Entregue"), j.owner_name || "—", payLabel(j), moneyCell(j.net_cents)],
+    });
+    let any = false;
+    for (const [key, name] of PHASE_SECTIONS) {
+      const rows = shown.filter((j) => (j.phase || "impressao") === key);
+      if (!rows.length && key === "outros") continue;                    // «Outros» só aparece se tiver trabalhos
+      if (!rows.length && !shown.length) continue;
+      any = any || rows.length > 0;
+      host.append(h("section", {}, sectionLabel(`${name}  ·  ${rows.length}`),
+        rows.length ? table(head, rows.map(rowOf)) : emptyNote(`Sem trabalhos em ${name.toLowerCase()}.`)));
+    }
+    if (!shown.length) host.append(emptyNote(jobs.length ? "Nenhum trabalho com estes filtros." : "Ainda não há trabalhos. Crie um com «+ Novo trabalho»."));
     total.textContent = shown.length ? `${shown.length} trabalho(s) · ${eur(shown.reduce((s, j) => s + j.net_cents, 0))} s/ IVA` : "";
   };
   root.append(pageHeader("Trabalhos", btn("+ Novo trabalho", () => openJob({}), "primary")),
@@ -201,6 +243,116 @@ async function pageJobs(root) {
       selectBox([["Todos os responsáveis", ""], ...S.users.map((u) => [u.name, String(u.id)])], F.jobs.owner, (v) => { F.jobs.owner = v; draw(); }),
       searchBox("Pesquisar por trabalho, cliente ou referência…", F.jobs.q, (v) => { F.jobs.q = v; draw(); })), host, total);
   draw();
+}
+
+/* ---------- Relatório mensal ---------- */
+const monthKey = (iso) => iso.slice(0, 7);
+function shiftMonth(key, n) { const [y, m] = key.split("-").map(Number), d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`; }
+const monthName = (key) => { const [y, m] = key.split("-").map(Number); return `${MONTHS[m - 1].charAt(0).toUpperCase()}${MONTHS[m - 1].slice(1)} ${y}`; };
+/* Mês corrente compara-se com o mesmo dia do mês anterior; meses fechados, com o mês anterior inteiro. */
+const reportBase = (r) => (r.is_current && r.prev_same_day_cents != null ? Number(r.prev_same_day_cents) : Number(r.prev_billed_cents));
+const pctChange = (now, before) => (before > 0 ? Math.round(((now - before) / before) * 100) : null);
+
+function reportChart(series, activeKey) {
+  const W = 620, H = 220, top = 26, bottom = 28, left = 8, n = series.length, slot = (W - left * 2) / n, bw = Math.min(30, slot * 0.62);
+  const max = Math.max(1, ...series.map((m) => Math.max(Number(m.billed_cents), Number(m.goal_cents)))) * 1.08, base = H - bottom;
+  const y = (c) => base - (Number(c) / max) * (base - top);
+  let g = "", step = "";
+  series.forEach((m, i) => {
+    const x = left + i * slot + slot / 2, k = monthKey(m.month), on = k === activeKey, yy = y(m.billed_cents);
+    g += `<rect x="${(x - bw / 2).toFixed(1)}" y="${yy.toFixed(1)}" width="${bw}" height="${Math.max(0, base - yy).toFixed(1)}" rx="4" fill="${on ? "#1d1d1b" : "#c9c5b9"}"/>`;
+    g += `<text x="${x.toFixed(1)}" y="${(yy - 5).toFixed(1)}" text-anchor="middle" font-size="10" fill="#55524b">${Math.round(Number(m.billed_cents) / 100)}</text>`;
+    g += `<text x="${x.toFixed(1)}" y="${H - 9}" text-anchor="middle" font-size="11" fill="#77746c">${MONTHS_SHORT[Number(k.slice(5)) - 1]}</text>`;
+    const gy = y(m.goal_cents).toFixed(1);
+    step += `${i ? "L" : "M"}${(left + i * slot).toFixed(1)},${gy} L${(left + (i + 1) * slot).toFixed(1)},${gy} `;
+  });
+  const el = h("div", { class: "rp-chart" });
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Faturado nos últimos 12 meses">${g}<path d="${step}" fill="none" stroke="#c0594a" stroke-width="1.5" stroke-dasharray="5 4"/></svg>`;
+  return el;
+}
+
+async function pageReport(root, arg) {
+  const todayKey = monthKey(todayISO());
+  const key = /^\d{4}-\d{2}$/.test(arg || "") ? arg : todayKey;
+  const r = await API.monthReport(key + "-01");
+  const billed = Number(r.billed_cents), goal = Number(r.goal_cents), prev = Number(r.prev_billed_cents);
+  const prevKey = shiftMonth(key, -1), count = Number(r.jobs_count), avg = Number(r.avg_cents);
+  const goPct = goal > 0 ? Math.round((billed / goal) * 100) : 0;
+  const editGoal = async () => {
+    const vals = await formDialog({
+      title: `Objetivo de ${monthName(key).toLowerCase()}`, values: { goal: goal / 100 }, ok: "Guardar", required: ["goal"],
+      intro: key === todayKey ? "Valor a faturar neste mês (com IVA). Os meses seguintes herdam este valor; os anteriores mantêm o que tinham." : "Só altera este mês.",
+      fields: [{ key: "goal", label: "Objetivo (€)", type: "number", dec: 2 }],
+      validate: (v) => (typeof v.goal === "number" && v.goal >= 0 ? null : "Indique um valor válido."),
+    });
+    if (vals && (await run(() => API.setGoal(Math.round(vals.goal * 100), key + "-01"))).ok) { toast("Objetivo guardado."); refresh(); }
+  };
+  const base = reportBase(r), ch = pctChange(billed, base), upto = r.is_current ? ` até ao dia ${Number(todayISO().slice(8, 10))}` : "";
+  const pm = monthName(prevKey).split(" ")[0].toLowerCase();
+  const stat = (lab, num, ...sub) => h("div", { class: "card stat" }, h("span", { class: "lab2" }, lab), h("span", { class: "n" }, num), h("div", { class: "muted small" }, sub));
+  const catMax = Math.max(1, ...r.by_category.map((c) => Number(c.gross_cents)));
+  const jobsList = r.jobs;
+  const pdf = () => printReport(r, key);
+  root.append(
+    h("div", { class: "page-head" }, h("h1", {}, "Relatório mensal"), h("div", { class: "spacer" }),
+      h("div", { class: "month-nav" },
+        h("button", { type: "button", class: "btn", "aria-label": "Mês anterior", onclick: () => { location.hash = `#/relatorio/${prevKey}`; } }, "‹"),
+        h("span", { class: "mn-label" }, monthName(key)),
+        h("button", { type: "button", class: "btn", "aria-label": "Mês seguinte", disabled: key >= todayKey, onclick: () => { location.hash = `#/relatorio/${shiftMonth(key, 1)}`; } }, "›")),
+      btn("Guardar em PDF", pdf, "primary")),
+    h("div", { class: "rp-stats" },
+      stat("Faturado", eur(billed),
+        ch == null ? `${pm}${upto}: ${eur(base)}` : [h("b", { class: ch >= 0 ? "ok" : "danger" }, `${ch >= 0 ? "▲" : "▼"} ${Math.abs(ch)} %`), ` vs ${pm}${upto} (${eur(base)})`]),
+      stat("Objetivo", eur(goal), `${goPct} % atingido · `, h("button", { type: "button", class: "linklike", onclick: editGoal }, "editar")),
+      stat("Trabalhos", String(count), `${pm}: ${r.prev_jobs_count}`),
+      stat("Valor médio", eur(avg), `${pm}: ${eur(r.prev_avg_cents)}`)),
+    h("div", { class: "rp-grid" },
+      h("div", { class: "card" }, h("h3", { class: "serif" }, `Últimos 12 meses · linha = objetivo`), reportChart(r.series, key)),
+      h("div", { class: "card" },
+        h("h3", { class: "serif" }, "Por categoria"),
+        r.by_category.length ? h("div", { class: "rp-bars" }, r.by_category.map((c) => h("div", { class: "rp-bar" }, h("span", {}, label(c.category)),
+          h("i", { style: { width: `${Math.max(4, (Number(c.gross_cents) / catMax) * 100)}%` } }), h("b", {}, eur(c.gross_cents))))) : emptyNote("Sem trabalhos faturados neste mês."),
+        h("h3", { class: "serif" }, "Maiores clientes"),
+        r.top_clients.length ? h("div", { class: "rp-clients" }, r.top_clients.map((c) => h("div", {}, h("span", {}, c.name), h("b", {}, eur(c.gross_cents))))) : emptyNote("—"))),
+    h("div", { class: "card" }, h("h3", { class: "serif" }, `Trabalhos faturados em ${MONTHS[Number(key.slice(5)) - 1]}`),
+      table(["Ref.", "Trabalho", "Cliente", "Pronto em", "Pagamento", { t: "Valor", r: true }], jobsList.map((j) => ({
+        onClick: () => openJob({ jobId: j.id }),
+        cells: [j.reference, { t: j.title, b: true }, j.client_name, fmtDate(j.ready_on), j.paid ? "Pago" : "Por pagar", moneyCell(j.gross_cents)],
+      })), { empty: "Nenhum trabalho passou a «Completo» neste mês." })));
+}
+
+/* Relatório em PDF (o browser guarda a página como PDF). */
+async function printReport(r, key) {
+  const area = document.getElementById("print-area") || h("div", { id: "print-area" });
+  if (!area.parentNode) document.body.append(area);
+  clear(area);
+  const billed = Number(r.billed_cents), goal = Number(r.goal_cents), prev = reportBase(r), ch = pctChange(billed, prev);
+  const logo = h("img", { src: "assets/logo.svg", alt: "whiteprints", class: "pq-logo" });
+  area.append(
+    h("div", { class: "pq-head" }, logo, h("div", { class: "pq-meta" }, h("div", { class: "pq-title" }, "Relatório mensal"), h("b", {}, monthName(key)), h("div", {}, `Emitido em ${fmtDateFull(todayISO())}`))),
+    h("table", { class: "pq-totals rp-sum" },
+      h("tr", {}, h("td", {}, "Faturado (com IVA)"), h("td", { class: "r" }, eur(billed))),
+      h("tr", {}, h("td", {}, `${r.is_current ? "Mês anterior, até ao mesmo dia" : "Mês anterior"}${ch == null ? "" : ` (${ch >= 0 ? "+" : "−"}${Math.abs(ch)} %)`}`), h("td", { class: "r" }, eur(prev))),
+      h("tr", {}, h("td", {}, "Objetivo"), h("td", { class: "r" }, `${eur(goal)} · ${goal > 0 ? Math.round((billed / goal) * 100) : 0} %`)),
+      h("tr", {}, h("td", {}, "Trabalhos faturados"), h("td", { class: "r" }, String(r.jobs_count))),
+      h("tr", {}, h("td", {}, "Valor médio por trabalho"), h("td", { class: "r" }, eur(r.avg_cents)))),
+    h("h3", { class: "rp-h" }, "Últimos 12 meses"), reportChart(r.series, key),
+    h("h3", { class: "rp-h" }, "Por categoria"),
+    h("table", { class: "pq-lines" }, h("tbody", {}, r.by_category.map((c) => h("tr", {}, h("td", {}, label(c.category)), h("td", { class: "r" }, eur(c.gross_cents)))))),
+    h("h3", { class: "rp-h" }, "Maiores clientes"),
+    h("table", { class: "pq-lines" }, h("tbody", {}, r.top_clients.map((c) => h("tr", {}, h("td", {}, c.name), h("td", { class: "r" }, `${c.jobs} trabalho(s)`), h("td", { class: "r" }, eur(c.gross_cents)))))),
+    h("h3", { class: "rp-h" }, "Trabalhos faturados"),
+    h("table", { class: "pq-lines" },
+      h("thead", {}, h("tr", {}, h("th", {}, "Ref."), h("th", {}, "Trabalho"), h("th", {}, "Cliente"), h("th", {}, "Pronto em"), h("th", { class: "r" }, "Valor"))),
+      h("tbody", {}, r.jobs.map((j) => h("tr", {}, h("td", {}, j.reference), h("td", {}, j.title), h("td", {}, j.client_name), h("td", {}, fmtDate(j.ready_on)), h("td", { class: "r" }, eur(j.gross_cents)))))),
+    h("div", { class: "pq-foot" }, `${COMPANY.name} · ${COMPANY.place} · ${COMPANY.web}`));
+  try { await logo.decode(); } catch { /* sem logótipo, imprime na mesma */ }
+  await new Promise((res) => setTimeout(res, 250));
+  const old = document.title;
+  document.title = `Relatório ${key}`;
+  const done = () => { document.title = old; window.removeEventListener("afterprint", done); };
+  window.addEventListener("afterprint", done);
+  window.print();
 }
 
 /* ---------- Orçamentos ---------- */
